@@ -12,7 +12,7 @@ Gem::Specification.new do |s|
   s.license     = "MIT"
   s.homepage    = "https://github.com/shishi-odoshi/otp-rails"
   s.required_ruby_version = ">= 3.2"
-  s.files       = Dir["lib/**/*.rb", "exe/*", "README.md", "LICENSE"]
+  s.files       = Dir["lib/**/*.rb", "exe/*", "README.md", "CHANGELOG.md", "LICENSE"]
   s.bindir      = "exe"
   s.executables = ["otp-rails"]
   # Deliberately no runtime dependencies: the supervisor must stay slim (DESIGN §9).
