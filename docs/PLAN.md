@@ -115,8 +115,13 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   nested block raises ConfigError. Heartbeat ids stay flat/global for now (see Open questions).
 
 ### 1.8 Release
-- [ ] `CHANGELOG.md`, `bundle exec rake build`, tag `v0.1.0`, push to RubyGems.
-- [ ] README: install, config reference, telemetry reference, exit codes.
+- [x] `CHANGELOG.md`, `bundle exec rake build`, tag `v0.1.0`, push to RubyGems.
+      (Everything done and verified except the `gem push` itself — held for Tim's
+      naming/API review per the HANDOFF checkpoint; the name burns on push.)
+- [x] README: install, config reference, telemetry reference, exit codes.
+- Notes: version bumped 0.1.0.dev → 0.1.0; `bundler/gem_tasks` added to the Rakefile for
+  `rake build`/`release`; built gem smoke-tested in an isolated GEM_HOME (`otp-rails version`
+  and `check` both work from the installed gem). CHANGELOG.md ships in the gem.
 
 ## Phase 2 — `otp-rails-template` (separate repo, after 1.8)
 - `rails new --template` script adding the gem, `config/supervisor.rb`, `bin/supervise`,
