@@ -61,11 +61,20 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
 - Accept: `test/socket_test.rb` — a fixture child heartbeats; stop it heartbeating; assert restart.
 
 ### 1.5 `:puma` adapter, beside mode (§4.2 step 1)
-- [ ] Wraps `bundle exec puma -C config/puma.rb`. Health = HTTP probe of `/up` (Rails 7.1+
+- [x] Wraps `bundle exec puma -C config/puma.rb`. Health = HTTP probe of `/up` (Rails 7.1+
       default) on the bound port parsed from `config/puma.rb` or `opts[:port]`.
-- [ ] Drain = SIGTERM (Puma graceful). `shutdown:` default 30.
+- [x] Drain = SIGTERM (Puma graceful). `shutdown:` default 30.
 - Accept: test against a 10-line Rack app under `test/fixtures/rack_app/` with puma as a
       **test-only** dependency. Kill puma master; assert restart; assert `/up` answers again.
+- Notes: `Adapters::Puma < Command` — spawn builds a derived ChildSpec (puma cmd +
+  `probe: {http: ".../up"}`), so health/link/drain/kill are all inherited via the 1.2
+  Probe path; zero new supervisor code. Port resolution: `opts[:port]` wins, else a
+  literal `port NNNN` line parsed from the config file, else ConfigError (raised before
+  anything spawns; ENV/ERB ports in the config must pass `opts[:port]`). Fixture puma
+  runs single mode on loopback; the test picks a free port at runtime. Beside-mode
+  observation for the §4.2 step-2 gate: kill -9 of a *cluster* master would orphan
+  workers that keep the port bound until they notice the master died — single mode
+  sidesteps it, cluster mode needs worker-level visibility (the step-2 plugin).
 
 ### 1.6 `:solid_queue` adapter
 - [ ] Wraps `bin/jobs` (Solid Queue supervisor). Health = active heartbeat from 1.4 sent by a
