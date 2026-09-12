@@ -85,10 +85,16 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   sidesteps it, cluster mode needs worker-level visibility (the step-2 plugin).
 
 ### 1.6 `:solid_queue` adapter
-- [ ] Wraps `bin/jobs` (Solid Queue supervisor). Health = active heartbeat from 1.4 sent by a
+- [x] Wraps `bin/jobs` (Solid Queue supervisor). Health = active heartbeat from 1.4 sent by a
       tiny hook, **not** the DB table (§9). Provide `lib/otp_rails/heartbeat.rb` — a
       Rails-free helper any child can require to send heartbeats.
 - Accept: fixture child using `Heartbeat`; kill it; assert restart.
+- Notes: `Heartbeat` is deliberately self-contained (`require "otp_rails/heartbeat"` loads
+  nothing else) so app initializers/hooks stay featherweight; it silently no-ops when
+  OTP_RAILS_SOCK is absent (unsupervised dev runs must not error) and reconnects on socket
+  loss without ever raising into the host. Adapter follows the 1.5 derived-spec pattern:
+  Command with cmd defaulted to `bin/jobs`; drain stays SIGTERM (Solid Queue's own graceful
+  stop). Passive PID health remains the pre-first-heartbeat fallback via `effective_health`.
 
 ### 1.7 Nested supervisors (§3.1)
 - [ ] `supervisor :background do ... end` in the DSL creates a subtree with its own strategy
