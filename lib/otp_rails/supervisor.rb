@@ -74,7 +74,13 @@ module OtpRails
         when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return
         when :dead    then return # the exit message arrives via link
         end
-        return if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          # PLAN 1.2: start_timeout exceeded ⇒ drain. The resulting exit flows
+          # through the normal link → handle_exit path, so it counts as a
+          # crash and the strategy + intensity apply.
+          stop_child(spec)
+          return
+        end
         sleep 0.05
       end
     end
