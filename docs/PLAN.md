@@ -97,9 +97,22 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   stop). Passive PID health remains the pre-first-heartbeat fallback via `effective_health`.
 
 ### 1.7 Nested supervisors (§3.1)
-- [ ] `supervisor :background do ... end` in the DSL creates a subtree with its own strategy
+- [x] `supervisor :background do ... end` in the DSL creates a subtree with its own strategy
       and intensity; escalation from a subtree is an exit of that child in the parent.
 - Accept: test where a subtree exceeds intensity and the parent restarts the whole subtree.
+- Notes: a subtree is an ordinary child via a `:supervisor` pseudo-adapter
+  (`Adapters::SupervisorAdapter`) — the handle wraps a child `Supervisor` running `run` on a
+  Thread; the Adapter interface is untouched. `Escalation` in the thread is caught by the link
+  waiter and reported as a crashed exit (exitstatus 70), so the parent's existing
+  handle_exit → strategy/intensity path applies with zero new supervisor code. The subtree's
+  `run` `ensure stop_all` drains its own children before the thread dies, so an escalated
+  subtree leaves no orphan PIDs (asserted in tests). The DSL keeps the nested block as a
+  **builder proc** and re-evaluates it on every (re)start: RestartIntensity is stateful, and a
+  restarted subtree must get a fresh instance / fresh intensity window — reusing the old
+  Supervisor would make the subtree re-escalate immediately. Subtree specs get
+  `health_interval: nil` (no probe monitor in the parent; thread death arrives via link) and
+  subtrees never bind their own heartbeat socket — only the root listens; `socket` inside a
+  nested block raises ConfigError. Heartbeat ids stay flat/global for now (see Open questions).
 
 ### 1.8 Release
 - [ ] `CHANGELOG.md`, `bundle exec rake build`, tag `v0.1.0`, push to RubyGems.
@@ -129,6 +142,15 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   supervisor already covers it; (b) add `fiddle` as a runtime dependency — violates hard
   rule 1 (zero dependencies); (c) tiny optional C extension. Recommendation: (a) for 0.1,
   revisit when CI adds Ruby 3.5.
+
+- **Heartbeat ids are flat/global across nested supervisors (1.7).** Only the root binds the
+  socket, and heartbeats key on the bare child id — so a grandchild heartbeating as `"jobs"`
+  lands in the ROOT's freshness table, not the subtree that owns `:jobs`, and duplicate ids
+  across sibling subtrees (legal today — uniqueness is per-tree) would collide. Options:
+  (a) keep flat ids; document "ids must be unique tree-wide when using heartbeats";
+  (b) path-qualified ids (`"background.jobs"`) — touches the §5 NDJSON contract beam consumes;
+  (c) root forwards heartbeats to the owning subtree. Recommendation: (a) for 0.1; revisit
+  (b) only with a DESIGN §5 edit if beam needs subtree-scoped visibility.
 
 ## Surprises log
 

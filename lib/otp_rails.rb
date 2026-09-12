@@ -26,5 +26,6 @@ require_relative "otp_rails/adapters/solid_queue"
 require_relative "otp_rails/socket_server"
 require_relative "otp_rails/heartbeat"
 require_relative "otp_rails/supervisor"
+require_relative "otp_rails/adapters/supervisor_adapter" # after supervisor: wraps a child Supervisor
 require_relative "otp_rails/dsl"
 require_relative "otp_rails/cli"
