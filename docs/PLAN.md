@@ -40,10 +40,16 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   through the normal link → handle_exit path, so intensity/strategy apply with no new code.
 
 ### 1.3 Periodic health loop (§5)
-- [ ] `health_interval` (default 5s) polling thread per child; `:degraded` emits telemetry only;
+- [x] `health_interval` (default 5s) polling thread per child; `:degraded` emits telemetry only;
       `:dead` from a probe (not just SIGCHLD) triggers the strategy. Reuse the exit queue.
-- [ ] Config knob `degraded_restart_after: N` (default nil) — N consecutive `:degraded` ⇒ restart.
+- [x] Config knob `degraded_restart_after: N` (default nil) — N consecutive `:degraded` ⇒ restart.
 - Accept: test with a fixture that starts answering 503 after a flag file appears.
+- Notes: monitor thread per child, started only once the child reached `:healthy`; stale
+  threads self-terminate via the generation guard. Probe-dead and degraded-threshold both
+  enqueue `:health_dead`, whose handler drains the child so the real exit flows through
+  link → handle_exit — i.e. the degraded restart counts toward intensity and the strategy
+  (same single crash path as the 1.2 start_timeout drain; prevents silent restart-flapping).
+  `:command` reports `:degraded` when a probe stops answering after having answered once.
 
 ### 1.4 Active heartbeat socket (§5, §9)
 - [ ] Supervisor listens on a Unix socket (`tmp/otp-rails.sock`, mode 0600). Path and a per-boot

@@ -25,9 +25,11 @@ module OtpRails
     def max_restarts(n, within:) = @intensity = { max_restarts: n, within: within }
     def backoff(kind, **opts) = @backoff = { kind: kind, **opts }
 
-    def child(id, adapter:, restart: :permanent, shutdown: 30, start_timeout: 30, **opts)
+    def child(id, adapter:, restart: :permanent, shutdown: 30, start_timeout: 30,
+              health_interval: 5, degraded_restart_after: nil, **opts)
       @children << ChildSpec.new(id: id, adapter: adapter, restart: restart, shutdown: shutdown,
-                                 start_timeout: start_timeout, opts: opts)
+                                 start_timeout: start_timeout, health_interval: health_interval,
+                                 degraded_restart_after: degraded_restart_after, opts: opts)
     end
 
     def build

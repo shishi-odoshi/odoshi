@@ -28,6 +28,7 @@ module OtpRails
         msg = @queue.pop
         case msg[:type]
         when :exit then handle_exit(msg[:id], msg[:generation], msg[:status])
+        when :health_dead then handle_health_dead(msg[:id], msg[:generation])
         when :stop then break
         end
       end
@@ -64,25 +65,66 @@ module OtpRails
         @queue << { type: :exit, id: spec.id, generation: generation, status: status } unless @stopping
       end
       Telemetry.emit(:"child.spawn", {}, { id: spec.id, adapter: spec.adapter, pid: handle.respond_to?(:pid) ? handle.pid : nil })
-      wait_healthy(spec, adapter, handle)
+      start_monitor(spec, generation) if wait_healthy(spec, adapter, handle) == :healthy
+    end
+
+    # PLAN 1.3: per-child polling thread. :degraded emits telemetry only,
+    # unless degraded_restart_after consecutive reports accumulate; :dead from
+    # a probe (not just SIGCHLD) goes through the exit queue like any crash.
+    def start_monitor(spec, generation)
+      return unless spec.health_interval
+      entry = @live[spec.id]
+      adapter, handle = entry[:adapter], entry[:handle]
+      degraded = 0
+      entry[:monitor] = Thread.new do
+        loop do
+          sleep spec.health_interval
+          break if @stopping || @live.dig(spec.id, :generation) != generation
+          case adapter.health(handle)
+          when :healthy
+            degraded = 0
+          when :degraded
+            degraded += 1
+            Telemetry.emit(:"child.degraded", { consecutive: degraded }, { id: spec.id })
+            if spec.degraded_restart_after && degraded >= spec.degraded_restart_after
+              @queue << { type: :health_dead, id: spec.id, generation: generation }
+              break
+            end
+          when :dead
+            @queue << { type: :health_dead, id: spec.id, generation: generation }
+            break
+          end
+        end
+      end
     end
 
     def wait_healthy(spec, adapter, handle)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + spec.start_timeout
       loop do
         case adapter.health(handle)
-        when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return
-        when :dead    then return # the exit message arrives via link
+        when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return :healthy
+        when :dead    then return :dead # the exit message arrives via link
         end
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           # PLAN 1.2: start_timeout exceeded ⇒ drain. The resulting exit flows
           # through the normal link → handle_exit path, so it counts as a
           # crash and the strategy + intensity apply.
           stop_child(spec)
-          return
+          return :timeout
         end
         sleep 0.05
       end
+    end
+
+    # A monitor thread declared this child unhealthy enough to replace. Drain
+    # it; the resulting real exit flows through link → handle_exit, so the
+    # strategy and intensity apply exactly as for a crash (same path as the
+    # 1.2 start_timeout drain). If the child already exited and was replaced,
+    # the generation guard makes this a no-op.
+    def handle_health_dead(id, generation)
+      entry = @live[id]
+      return if entry.nil? || entry[:generation] != generation
+      stop_child(spec_for(id))
     end
 
     def handle_exit(id, generation, status)
@@ -112,6 +154,8 @@ module OtpRails
 
     def stop_child(spec)
       entry = @live[spec.id] or return
+      entry[:monitor]&.kill
+      entry[:monitor] = nil
       Telemetry.emit(:"child.drain", {}, { id: spec.id })
       return if entry[:adapter].drain(entry[:handle], timeout: spec.shutdown)
       Telemetry.emit(:"child.kill", {}, { id: spec.id })

@@ -3,7 +3,7 @@ module OtpRails
   module Adapters
     # DESIGN §4.1 :command — arbitrary command. Health = PID alive (+ optional probe, TODO).
     class Command < Adapter
-      Handle = Struct.new(:pid, :spec, :started_at, :exit_status, :waiter)
+      Handle = Struct.new(:pid, :spec, :started_at, :exit_status, :waiter, :healthy_once)
 
       def spawn(spec)
         cmd = spec.opts.fetch(:cmd) { raise ConfigError, "#{spec.id}: :command adapter requires cmd:" }
@@ -40,7 +40,14 @@ module OtpRails
       def health(handle)
         return :dead if handle.exit_status
         Process.kill(0, handle.pid)
-        Probe.answering?(handle.spec) ? :healthy : :starting
+        if Probe.answering?(handle.spec)
+          handle.healthy_once = true
+          :healthy
+        elsif handle.healthy_once
+          :degraded # was healthy, probe stopped answering, PID still alive (§5)
+        else
+          :starting
+        end
       rescue Errno::ESRCH
         :dead
       end
