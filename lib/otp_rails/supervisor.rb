@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 module OtpRails
   # DESIGN §3.1 / §3.3. One supervisor, an ordered set of children, one strategy.
-  # Nested supervisors (subtrees) are a v0.2 deliverable.
+  # Nested supervisors (subtrees) are ordinary children via Adapters::SupervisorAdapter:
+  # a subtree escalating shows up here as a crashed child exit.
   class Supervisor
     attr_reader :children, :strategy, :intensity, :backoff
 
