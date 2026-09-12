@@ -5,14 +5,26 @@ module OtpRails
   class Supervisor
     attr_reader :children, :strategy, :intensity, :backoff
 
-    def initialize(strategy: :one_for_one, intensity: RestartIntensity.new, backoff: Backoff.new)
+    def initialize(strategy: :one_for_one, intensity: RestartIntensity.new, backoff: Backoff.new,
+                   socket_path: nil)
       raise ConfigError, "unknown strategy #{strategy}" unless Strategy::KINDS.include?(strategy)
       @strategy, @intensity, @backoff = strategy, intensity, backoff
       @children = [] # ordered ChildSpecs
-      @live = {}     # id => { adapter:, handle:, attempts:, generation: }
+      @live = {}     # id => { adapter:, handle:, attempts:, generation:, monitor: }
       @queue = Queue.new
       @stopping = false
+      @heartbeats = {} # id => { at: monotonic ts of last heartbeat, state: reported state }
+      return unless socket_path
+      @socket = SocketServer.new(
+        path: socket_path,
+        on_heartbeat: ->(msg) { @heartbeats[msg["id"].to_sym] = { at: mono_now, state: msg["state"] } },
+        on_control: ->(msg) { @queue << { type: :control, cmd: msg["cmd"], id: msg["id"].to_s.to_sym } }
+      )
     end
+
+    # The per-boot token children must echo in every heartbeat (nil when the
+    # socket is disabled). Exported to children as OTP_RAILS_TOKEN.
+    def heartbeat_token = @socket&.token
 
     def add_child(spec)
       raise ConfigError, "duplicate child id #{spec.id}" if @children.any? { |c| c.id == spec.id }
@@ -23,17 +35,20 @@ module OtpRails
     # Blocks until the tree is shut down. Raises Escalation if intensity is exceeded.
     def run
       Telemetry.emit(:"supervisor.start", {}, { strategy: strategy, children: ids })
+      @socket&.start # before children, so they inherit OTP_RAILS_SOCK/_TOKEN
       @children.each { |spec| start_child(spec) }
       loop do
         msg = @queue.pop
         case msg[:type]
         when :exit then handle_exit(msg[:id], msg[:generation], msg[:status])
         when :health_dead then handle_health_dead(msg[:id], msg[:generation])
+        when :control then handle_control(msg)
         when :stop then break
         end
       end
     ensure
       stop_all
+      @socket&.stop
       Telemetry.emit(:"supervisor.stop")
     end
 
@@ -56,6 +71,7 @@ module OtpRails
     def spec_for(id) = @children.find { |c| c.id == id } || raise(ArgumentError, "no child #{id}")
 
     def start_child(spec)
+      @heartbeats.delete(spec.id) # a replaced child's heartbeats must not vouch for its successor
       adapter = Adapter.lookup(spec.adapter).new
       handle = adapter.spawn(spec)
       prev = @live[spec.id] || {}
@@ -80,7 +96,7 @@ module OtpRails
         loop do
           sleep spec.health_interval
           break if @stopping || @live.dig(spec.id, :generation) != generation
-          case adapter.health(handle)
+          case effective_health(spec, adapter, handle)
           when :healthy
             degraded = 0
           when :degraded
@@ -101,7 +117,7 @@ module OtpRails
     def wait_healthy(spec, adapter, handle)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + spec.start_timeout
       loop do
-        case adapter.health(handle)
+        case effective_health(spec, adapter, handle)
         when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return :healthy
         when :dead    then return :dead # the exit message arrives via link
         end
@@ -114,6 +130,33 @@ module OtpRails
         end
         sleep 0.05
       end
+    end
+
+    HEARTBEAT_STATES = { "starting" => :starting, "healthy" => :healthy,
+                         "degraded" => :degraded, "dead" => :dead }.freeze
+
+    # DESIGN §5/§9: health is active-first. A child that has heartbeated is
+    # judged by heartbeat freshness and its own reported state — missing 3
+    # intervals ⇒ :degraded, 6 ⇒ :dead. Children that never heartbeat fall
+    # back to the adapter's passive probe.
+    def effective_health(spec, adapter, handle)
+      hb = @heartbeats[spec.id]
+      return adapter.health(handle) unless hb
+      missed = (mono_now - hb[:at]) / spec.health_interval
+      return :dead if missed >= 6
+      return :degraded if missed >= 3
+      HEARTBEAT_STATES.fetch(hb[:state], :healthy)
+    end
+
+    def mono_now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    # DESIGN §7/§9: {"cmd":"restart","id":...} over the socket — the transport
+    # Rails.supervisor.restart! rides later. Unknown commands and ids are
+    # ignored; the token was already checked at the socket layer.
+    def handle_control(msg)
+      return unless msg[:cmd] == "restart"
+      return unless @children.any? { |c| c.id == msg[:id] }
+      restart!(msg[:id])
     end
 
     # A monitor thread declared this child unhealthy enough to replace. Drain
