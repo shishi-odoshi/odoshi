@@ -40,8 +40,7 @@ module OtpRails
       def health(handle)
         return :dead if handle.exit_status
         Process.kill(0, handle.pid)
-        # TODO(v0.1): opts[:probe] => {tcp: port} | {http: url} — report :starting until it answers
-        :healthy
+        Probe.answering?(handle.spec) ? :healthy : :starting
       rescue Errno::ESRCH
         :dead
       end

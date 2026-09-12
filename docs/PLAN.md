@@ -29,12 +29,15 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   includes macos-latest (acceptance requires green on both, the skeleton only ran ubuntu).
 
 ### 1.2 Probes for `:command` (§4.1)
-- [ ] `probe: { tcp: PORT }` — `:starting` until a TCP connect succeeds, then `:healthy`.
-- [ ] `probe: { http: "http://127.0.0.1:3000/up" }` — `:starting` until 2xx. Net::HTTP is
+- [x] `probe: { tcp: PORT }` — `:starting` until a TCP connect succeeds, then `:healthy`.
+- [x] `probe: { http: "http://127.0.0.1:3000/up" }` — `:starting` until 2xx. Net::HTTP is
       stdlib, so allowed.
-- [ ] `start_timeout` exceeded ⇒ drain, count as a crash, apply strategy. Test with a script
+- [x] `start_timeout` exceeded ⇒ drain, count as a crash, apply strategy. Test with a script
       that never opens its port.
 - Accept: `test/probe_test.rb` using a fixture Ruby TCP server under `test/fixtures/`.
+- Notes: probes live in `Probe` (lib/otp_rails/probe.rb) behind `Command#health` — the
+  Adapter interface is unchanged. start_timeout ⇒ `stop_child`; the drained exit flows
+  through the normal link → handle_exit path, so intensity/strategy apply with no new code.
 
 ### 1.3 Periodic health loop (§5)
 - [ ] `health_interval` (default 5s) polling thread per child; `:degraded` emits telemetry only;
