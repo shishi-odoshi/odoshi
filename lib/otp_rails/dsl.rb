@@ -19,11 +19,13 @@ module OtpRails
       @intensity = { max_restarts: 5, within: 60 }
       @backoff = { kind: :exponential, base: 1, cap: 30 }
       @children = []
+      @socket_path = "tmp/otp-rails.sock" # DESIGN §5/§9 default; socket nil disables
     end
 
     def strategy(kind) = @strategy = kind
     def max_restarts(n, within:) = @intensity = { max_restarts: n, within: within }
     def backoff(kind, **opts) = @backoff = { kind: kind, **opts }
+    def socket(path) = @socket_path = path
 
     def child(id, adapter:, restart: :permanent, shutdown: 30, start_timeout: 30,
               health_interval: 5, degraded_restart_after: nil, **opts)
@@ -35,7 +37,8 @@ module OtpRails
     def build
       sup = Supervisor.new(strategy: @strategy,
                            intensity: RestartIntensity.new(**@intensity),
-                           backoff: Backoff.new(**@backoff))
+                           backoff: Backoff.new(**@backoff),
+                           socket_path: @socket_path)
       @children.each { |c| sup.add_child(c) }
       sup
     end

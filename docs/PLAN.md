@@ -52,13 +52,21 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   `:command` reports `:degraded` when a probe stops answering after having answered once.
 
 ### 1.4 Active heartbeat socket (§5, §9)
-- [ ] Supervisor listens on a Unix socket (`tmp/otp-rails.sock`, mode 0600). Path and a per-boot
+- [x] Supervisor listens on a Unix socket (`tmp/otp-rails.sock`, mode 0600). Path and a per-boot
       token are passed to children via `OTP_RAILS_SOCK` / `OTP_RAILS_TOKEN` env.
-- [ ] Children write NDJSON heartbeats: `{"id","state","ts","token","meta"}`. Bad token ⇒ dropped.
-- [ ] A child that heartbeats is `active`; missing 3 intervals ⇒ `:degraded`, 6 ⇒ `:dead`.
-- [ ] Control messages on the same socket: `{"cmd":"restart","id":"jobs","token":...}`.
+- [x] Children write NDJSON heartbeats: `{"id","state","ts","token","meta"}`. Bad token ⇒ dropped.
+- [x] A child that heartbeats is `active`; missing 3 intervals ⇒ `:degraded`, 6 ⇒ `:dead`.
+- [x] Control messages on the same socket: `{"cmd":"restart","id":"jobs","token":...}`.
       This is the transport for `Rails.supervisor.restart!` later.
 - Accept: `test/socket_test.rb` — a fixture child heartbeats; stop it heartbeating; assert restart.
+- Notes: `SocketServer` (NDJSON only, token checked at the socket layer, silent drops).
+  Env is exported in the supervisor process before children start, so every adapter inherits
+  it with no interface change. Heartbeat freshness/state feeds `effective_health`: active
+  children are judged by heartbeats (child-reported state, 3/6-interval aging), passive
+  children fall back to adapter probes; heartbeat-`:dead` reuses the 1.3 `:health_dead` →
+  drain → crash path. Heartbeats are cleared on respawn so a replaced child can't vouch for
+  its successor. DSL gains `socket PATH` (default `tmp/otp-rails.sock`; `socket nil` disables —
+  the CLI shutdown tests use that, since Unix sockets can't bind on some mounted filesystems).
 
 ### 1.5 `:puma` adapter, beside mode (§4.2 step 1)
 - [x] Wraps `bundle exec puma -C config/puma.rb`. Health = HTTP probe of `/up` (Rails 7.1+

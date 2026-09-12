@@ -74,7 +74,9 @@ class ShutdownTest < Minitest::Test
   def with_config(body)
     Dir.mktmpdir do |dir|
       cfg = File.join(dir, "supervisor.rb")
-      File.write(cfg, body)
+      # These tests exercise shutdown semantics, not the heartbeat socket —
+      # disable it so they don't depend on the cwd filesystem being bindable.
+      File.write(cfg, "socket nil\n#{body}")
       yield cfg
     end
   end
