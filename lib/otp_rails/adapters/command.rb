@@ -8,7 +8,22 @@ module OtpRails
       def spawn(spec)
         cmd = spec.opts.fetch(:cmd) { raise ConfigError, "#{spec.id}: :command adapter requires cmd:" }
         env = spec.opts.fetch(:env, {}).transform_keys(&:to_s)
-        pid = Process.spawn(env, cmd, pgroup: true, **spec.opts.fetch(:spawn_opts, {}))
+        spawn_opts = spec.opts.fetch(:spawn_opts, {})
+        pid =
+          if OrphanGuard.available?
+            parent = Process.pid
+            Process.fork do
+              Process.setsid # own session ⇒ own pgroup, same as pgroup: true below
+              OrphanGuard.arm!(parent)
+              begin
+                Process.exec(env, cmd, **spawn_opts)
+              rescue SystemCallError
+                Process.exit!(127)
+              end
+            end
+          else
+            Process.spawn(env, cmd, pgroup: true, **spawn_opts)
+          end
         Handle.new(pid, spec, Process.clock_gettime(Process::CLOCK_MONOTONIC), nil, nil)
       end
 

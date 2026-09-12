@@ -2,8 +2,8 @@ name: ci
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-latest
-    strategy: { matrix: { ruby: ["3.2", "3.3", "3.4"] } }
+    runs-on: ${{ matrix.os }}
+    strategy: { matrix: { ruby: ["3.2", "3.3", "3.4"], os: [ubuntu-latest, macos-latest] } }
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1

@@ -18,12 +18,15 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
 ## Phase 1 — `otp-rails` 0.1
 
 ### 1.1 Shutdown correctness
-- [ ] `stop_all` drains children in reverse start order and waits for each before the next.
-- [ ] Supervisor exits non-zero (70) on escalation, zero on clean stop; CLI honors both.
-- [ ] Orphan prevention: if the supervisor itself is SIGKILLed, children get SIGTERM.
+- [x] `stop_all` drains children in reverse start order and waits for each before the next.
+- [x] Supervisor exits non-zero (70) on escalation, zero on clean stop; CLI honors both.
+- [x] Orphan prevention: if the supervisor itself is SIGKILLed, children get SIGTERM.
       Implement via `Process.setsid` + prctl-style parent-death signal where available, else
       document the limitation. Test: kill -9 the supervisor, assert children exit within 5s.
 - Accept: new tests in `test/shutdown_test.rb` green on Linux and macOS.
+- Notes: Linux gets `fork → setsid → prctl(PR_SET_PDEATHSIG, SIGTERM) → exec` (fiddle, stdlib);
+  macOS has no parent-death signal — documented in README, test skips there. CI matrix now
+  includes macos-latest (acceptance requires green on both, the skeleton only ran ubuntu).
 
 ### 1.2 Probes for `:command` (§4.1)
 - [ ] `probe: { tcp: PORT }` — `:starting` until a TCP connect succeeds, then `:healthy`.
@@ -87,8 +90,19 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
 
 ## Open questions (add here, don't guess)
 
-- (none yet)
+- **fiddle leaves the default gems in Ruby 3.5** (warns on 3.4). Orphan prevention (1.1) uses
+  stdlib fiddle for `prctl(PR_SET_PDEATHSIG)` on Linux. On Ruby 3.5+ without the fiddle gem,
+  `OrphanGuard.available?` returns false and we silently fall back to plain spawn (same
+  behavior as macOS). Options: (a) accept the graceful degradation — platform-as-final-
+  supervisor already covers it; (b) add `fiddle` as a runtime dependency — violates hard
+  rule 1 (zero dependencies); (c) tiny optional C extension. Recommendation: (a) for 0.1,
+  revisit when CI adds Ruby 3.5.
 
 ## Surprises log
 
 - (record anything that contradicted DESIGN.md or cost more than an hour)
+- 1.1 — `Process.kill(0, pid)` succeeds on zombies. The orphan test originally asserted
+  "child pid gone within 5s", which false-fails anywhere PID 1 doesn't promptly reap
+  reparented orphans (Docker, bare containers). pdeathsig itself worked the whole time.
+  Fixed by having the fixture child write a marker file from its TERM handler — assert
+  signal delivery, not process disappearance.
