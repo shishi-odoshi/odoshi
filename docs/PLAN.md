@@ -171,9 +171,11 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
 ## Phase 4 — `beam` (Elixir, separate repo)
 - [x] Ports-based supervisor consuming §5 NDJSON — shipped 2026-09-13
       (https://github.com/shishi-odoshi/beam, plus the Ruby⇄Elixir contract harness in its CI).
-- [ ] Shared queue — decided 2026-09-13 (decision log): SOLID QUEUE schema, not GoodJob;
-      Postgres-only v1; beam runs designated queue(s) with registered Elixir handlers,
-      mirroring the Ruby worker's claim/finish/fail/heartbeat semantics. In progress.
+- [x] Shared queue — shipped 2026-09-13 (beam PR #5): SOLID QUEUE schema per the decision
+      log; Postgres-only v1; postgrex-only deps. Claim/finish/fail/heartbeat mirror
+      solid_queue 1.7 source; burst-proven zero cross-claims against a real Ruby worker;
+      orphan contract verified (note: SQ FAILS pruned claims with ProcessPrunedError, it
+      does not release them — otp-rails#41). GlobalID args and AJ retries out of scope v1.
 - [ ] Phoenix channels.
 
 ## Open questions (add here, don't guess)
