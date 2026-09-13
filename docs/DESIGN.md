@@ -111,8 +111,16 @@ child reports:
   Message format is newline-delimited JSON:
 
 ```json
-{"id":"web","state":"healthy","ts":1757700000,"meta":{"workers":4,"backlog":0}}
+{"id":"web","state":"healthy","ts":1757700000,"token":"<OTP_RAILS_TOKEN>","meta":{"workers":4,"backlog":0}}
 ```
+
+Wire rules (each violated line is silently dropped, exactly like a bad token):
+- Every message carries `token` — the per-boot value from `OTP_RAILS_TOKEN`.
+- `token`, `id`, `state`, and `cmd` are JSON strings; non-string values are malformed.
+- A line is at most 64 KiB including the newline; longer is malformed (receivers drop
+  the oversized line and resume at the next newline, memory stays bounded).
+- `ts` is informational only: freshness is measured at receipt by the supervisor's
+  monotonic clock, never from `ts`.
 
 State transitions:
 - `starting → healthy` within `start_timeout`, else counted as a crash.
@@ -199,3 +207,7 @@ None blocking Phase 1.
 - 2026-09-12 — Dev server wrapping is opt-in via `config.supervisor.wrap_dev_server`.
 - 2026-09-12 — Name: `otp-rails`. Gems: `otp-rails`, `otp-rails-resilience`; Hex: `otp_rails_beam`.
 - 2026-09-12 — GitHub org: `shishi-odoshi` (鹿威し, the self-resetting bamboo fountain). All repos live under it; the org name is not used in gem/Hex names.
+- 2026-09-13 — §5 wire rules tightened per the QA pass (Tim's fix directive; issues #21/#22):
+  `token` documented in the example (both implementations always required it), string-typed
+  fields, 64 KiB line cap, `ts` informational. Behavior was already true in Ruby; beam
+  mirrors it. No message shape changed.
