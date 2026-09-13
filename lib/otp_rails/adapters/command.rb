@@ -9,21 +9,21 @@ module OtpRails
         cmd = spec.opts.fetch(:cmd) { raise ConfigError, "#{spec.id}: :command adapter requires cmd:" }
         env = spec.opts.fetch(:env, {}).transform_keys(&:to_s)
         spawn_opts = spec.opts.fetch(:spawn_opts, {})
-        pid =
-          if OrphanGuard.available?
-            parent = Process.pid
-            Process.fork do
-              Process.setsid # own session ⇒ own pgroup, same as pgroup: true below
-              OrphanGuard.arm!(parent)
-              begin
-                Process.exec(env, cmd, **spawn_opts)
-              rescue SystemCallError
-                Process.exit!(127)
-              end
-            end
-          else
-            Process.spawn(env, cmd, pgroup: true, **spawn_opts)
+        # One spawn path on every platform (#15): fork → setsid → exec, with
+        # exec failure becoming exit 127 through the normal link → crash →
+        # strategy machinery. Process.spawn raised Errno::ENOENT into the
+        # supervisor loop for a bad cmd on macOS (whole tree crashed, exit 1)
+        # while the Linux fork path restart-looped to escalation (exit 70).
+        parent = Process.pid
+        pid = Process.fork do
+          Process.setsid # own session ⇒ own pgroup (drain/kill signal the group)
+          OrphanGuard.arm!(parent)
+          begin
+            Process.exec(env, cmd, **spawn_opts)
+          rescue StandardError
+            Process.exit!(127)
           end
+        end
         Handle.new(pid, spec, Process.clock_gettime(Process::CLOCK_MONOTONIC), nil, nil)
       end
 
