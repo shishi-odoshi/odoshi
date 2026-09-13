@@ -14,6 +14,7 @@ module OtpRails
       @live = {}     # id => { adapter:, handle:, attempts:, generation:, monitor: }
       @queue = Queue.new
       @stopping = false
+      @stop_requested = false
       @heartbeats = {} # id => { at: monotonic ts of last heartbeat, state: reported state }
       return unless socket_path
       @socket = SocketServer.new(
@@ -44,7 +45,10 @@ module OtpRails
     def run
       Telemetry.emit(:"supervisor.start", {}, { strategy: strategy, children: ids })
       @socket&.start # before children, so they inherit OTP_RAILS_SOCK/_TOKEN
-      @children.each { |spec| start_child(spec) }
+      @children.each do |spec|
+        break if @stop_requested
+        start_child(spec)
+      end
       loop do
         msg = @queue.pop
         case msg[:type]
@@ -60,7 +64,14 @@ module OtpRails
       Telemetry.emit(:"supervisor.stop")
     end
 
-    def stop = @queue << { type: :stop }
+    # Sets the flag first: the main loop may be stuck in a wait_healthy poll
+    # or a backoff sleep for up to start_timeout/backoff seconds, and shutdown
+    # must not wait for those (issue #28 — platforms SIGKILL after their grace
+    # period, which resurrects the orphan problem).
+    def stop
+      @stop_requested = true
+      @queue << { type: :stop }
+    end
 
     # Public remediation API (DESIGN §7). Over IPC in the real thing; direct call here.
     def restart!(id)
@@ -107,6 +118,11 @@ module OtpRails
           case effective_health(spec, adapter, handle)
           when :healthy
             degraded = 0
+            # One healthy interval resets the backoff ladder (#19): a child
+            # that crashes rarely should not converge to permanent max
+            # backoff. Crash-looping children never reach a monitor, so flap
+            # damping is unaffected.
+            entry[:attempts] = 0
           when :degraded
             degraded += 1
             Telemetry.emit(:"child.degraded", { consecutive: degraded }, { id: spec.id })
@@ -125,6 +141,7 @@ module OtpRails
     def wait_healthy(spec, adapter, handle)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + spec.start_timeout
       loop do
+        return :stopping if @stop_requested # shutdown must not wait out start_timeout (#28)
         case effective_health(spec, adapter, handle)
         when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return :healthy
         when :dead    then return :dead # the exit message arrives via link
@@ -188,7 +205,13 @@ module OtpRails
 
       uptime = Process.clock_gettime(Process::CLOCK_MONOTONIC) - entry[:handle].started_at
       Telemetry.emit(:"child.exit", { exit_code: status&.exitstatus, uptime_ms: (uptime * 1000).round }, { id: id })
-      return unless spec.restart?(status)
+      unless spec.restart?(status)
+        # The child is gone for good: keep no stale entry, or stop_all and the
+        # monitor emit spurious drains for a corpse later (issue #20).
+        entry[:monitor]&.kill
+        @live.delete(id)
+        return
+      end
 
       if intensity.record!
         Telemetry.emit(:"supervisor.escalate", { restarts: intensity.count }, { within: intensity.within })
@@ -196,13 +219,24 @@ module OtpRails
       end
 
       Strategy.affected(strategy, ids, id).each do |aid|
+        break if @stop_requested # shutdown preempts the restart fan-out (#28)
         aspec = spec_for(aid)
         stop_child(aspec) unless aid == id
         attempts = (@live[aid][:attempts] += 1)
         delay = backoff.delay(attempts)
         Telemetry.emit(:"child.restart", { backoff_ms: (delay * 1000).round }, { id: aid, attempt: attempts, strategy: strategy })
-        sleep delay
+        interruptible_sleep(delay)
+        break if @stop_requested
         start_child(aspec)
+      end
+    end
+
+    # Backoff must not delay shutdown (#28): sleep in slices, bail on stop.
+    def interruptible_sleep(seconds)
+      deadline = mono_now + seconds
+      while mono_now < deadline
+        return if @stop_requested
+        sleep [0.1, deadline - mono_now].min
       end
     end
 
