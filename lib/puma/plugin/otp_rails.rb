@@ -26,7 +26,7 @@ Puma::Plugin.create do
       state: -> { otp_rails_state(launcher) },
       meta: -> { otp_rails_meta(launcher) }
     )
-    launcher.events.on_stopped { beat&.kill } if beat
+    launcher.events.on_stopped { beat.stop } if beat
   end
 
   private
