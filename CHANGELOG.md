@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.2.0 — 2026-09-13
+
+**Puma plugin (DESIGN §4.2 step 2)** — `plugin :otp_rails` in `config/puma.rb`: the master
+heartbeats worker-level state over the §5 socket; a missing worker reports `"degraded"`
+(⇒ `child.degraded` telemetry, `meta: {workers, booted, phase}`) while puma replaces it —
+visibility only, no lifecycle change. The `:puma` and `:solid_queue` adapters now export
+`OTP_RAILS_CHILD_ID=<id>` to their children (explicit `env:` wins).
+
+**Hardening from a three-track QA pass** (adversarial review + soak/stress + a Ruby⇄Elixir
+contract harness now permanent in the sidecar's CI):
+- Drain signals the whole process group — shell-wrapped cmds (`"a && b"`) no longer leave
+  their real workload running after a "clean" shutdown, or duplicate it on restart (#24).
+- Fan-out follows OTP: all affected children stop in reverse start order before any
+  restart; declaration-order dependencies hold during `rest_for_one`/`one_for_all` (#14).
+- One spawn path everywhere (fork → setsid → exec): an unspawnable `cmd:` is a child crash
+  (exit 127 → strategy → escalation), not a supervisor crash; identical on macOS/Linux (#15).
+- Socket hardening: 64 KiB line cap, string-typed `token`/`cmd`/`id`/`state`, unknown-id
+  heartbeats dropped at intake, 64-connection cap, listen backlog 128, connection threads
+  torn down on stop, unusable socket path ⇒ exit 78. A well-formed heartbeat naming a
+  subtree id no longer crashes the tree (#25, #27, #16, #17, #30, #31).
+- `stop` is prompt during stuck starts, restart fan-outs, and backoff sleeps — no more
+  blowing platform grace periods (#28). One healthy interval resets the backoff ladder
+  (#19). Non-restarted children leave no stale state or corpse telemetry (#20).
+- `Heartbeat`: the beat thread survives raising/unencodable `state:`/`meta:` lambdas
+  (falls back to last-good state / `{}`), and closes failed sockets — no fd growth while
+  the supervisor is away (#26, #29).
+- DESIGN §5 wire rules documented (token in the example, string fields, line cap, `ts`
+  informational); the Elixir sidecar mirrors them byte-for-byte.
+
+**Breaking:** `OtpRails::Heartbeat.start` returns the `Heartbeat` instance (so `#stop`
+works) instead of the raw Thread; still `nil` when unsupervised (#23).
+
 ## v0.1.1 — 2026-09-12
 
 - Gemspec only: author listed as `timimsms`. No code changes.
