@@ -176,7 +176,9 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
       solid_queue 1.7 source; burst-proven zero cross-claims against a real Ruby worker;
       orphan contract verified (note: SQ FAILS pruned claims with ProcessPrunedError, it
       does not release them — otp-rails#41). GlobalID args and AJ retries out of scope v1.
-- [ ] Phoenix channels.
+- [ ] Channels — decided 2026-09-13 (decision log): ActionCable-compatible wire protocol
+      over WebSockets, broadcasts from the Solid Cable schema, Turbo signed-stream auth.
+      In progress.
 
 ## Open questions (add here, don't guess)
 

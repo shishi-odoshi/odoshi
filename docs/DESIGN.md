@@ -217,3 +217,10 @@ None blocking Phase 1.
   usual; beam claims only designated queue(s) (default "elixir") with registered Elixir
   handlers, mirroring the Ruby worker's claim/finish/fail/heartbeat semantics so both
   runners share the tables safely. Ruby workers keep all other queues.
+- 2026-09-13 — Phase 4 channels: beam's realtime layer is ACTIONCABLE-COMPATIBLE (Tim's
+  call): beam serves the ActionCable v1 JSON wire protocol over WebSockets, sourcing
+  broadcasts from the Solid Cable schema (Rails 8 default cable adapter), so existing
+  Turbo Streams / @rails/actioncable clients repoint their cable URL with no Rails-side
+  code changes. Auth v1 = Turbo signed stream names verified with the shared Rails
+  secret. Native Phoenix channel semantics deferred; the implementation may serve the
+  protocol with a minimal Elixir websocket stack rather than full Phoenix.
