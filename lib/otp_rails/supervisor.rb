@@ -218,16 +218,24 @@ module OtpRails
         raise Escalation, "restart intensity exceeded (#{intensity.count} in #{intensity.within}s)"
       end
 
-      Strategy.affected(strategy, ids, id).each do |aid|
+      affected = Strategy.affected(strategy, ids, id)
+      # OTP semantics (#14): declaration order encodes dependency, so first
+      # terminate ALL affected children in reverse start order — a
+      # replacement :b must never boot while an old :c that depended on the
+      # dead :b is still running — then restart them in start order.
+      affected.reverse_each do |aid|
+        stop_child(spec_for(aid)) unless aid == id
+      end
+      affected.each do |aid|
         break if @stop_requested # shutdown preempts the restart fan-out (#28)
-        aspec = spec_for(aid)
-        stop_child(aspec) unless aid == id
-        attempts = (@live[aid][:attempts] += 1)
+        entry = @live[aid]
+        next unless entry # a temporary/clean-transient sibling is gone for good (#20)
+        attempts = (entry[:attempts] += 1)
         delay = backoff.delay(attempts)
         Telemetry.emit(:"child.restart", { backoff_ms: (delay * 1000).round }, { id: aid, attempt: attempts, strategy: strategy })
         interruptible_sleep(delay)
         break if @stop_requested
-        start_child(aspec)
+        start_child(spec_for(aid))
       end
     end
 
