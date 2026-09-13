@@ -137,9 +137,22 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   must match RETITLED processes — live puma shows "puma 7.x (tcp://...)", solid queue shows
   "solid-queue-supervisor(...)"; neither keeps its spawn cmdline.
 
-## Phase 2.5 — Puma plugin (§4.2 step 2)
-- `lib/puma/plugin/otp_rails.rb` using `on_worker_boot/shutdown` to send worker-level heartbeats
+## Phase 2.5 — Puma plugin (§4.2 step 2) — DONE 2026-09-13
+- [x] `lib/puma/plugin/otp_rails.rb` using `on_worker_boot/shutdown` to send worker-level heartbeats
   over the 1.4 socket. Adds `[:otp_rails, :child, :degraded]` when a worker is missing.
+- Notes: implemented master-side — the plugin heartbeats from the puma master using
+  `launcher.stats` (booted < workers ⇒ "degraded"), rather than per-worker hooks: worker
+  hooks run in worker processes and N writers under one child id would mask a missing
+  worker. Worker detail rides the FROZEN §5 fields (`state` + `meta: {workers, booted,
+  phase}`), no protocol extension, no new telemetry event (the supervisor's health loop
+  emits the existing child.degraded). Lives under lib/puma/ so requiring puma never
+  leaks into the supervisor (hard rule 1); puma remains a test-only dependency.
+- The :puma and :solid_queue adapters now inject OTP_RAILS_CHILD_ID=<id> into child env
+  (explicit env wins) so plugins/hooks heartbeat under the right id automatically.
+- Test surprise: with preload_app! and a tiny app, puma replaces a killed worker faster
+  than one heartbeat interval — the degraded window only exists when workers pay real
+  boot time. The cluster fixture boots workers with a 1s app-load delay (the realistic
+  Rails shape); no-preload is also what makes the missing-worker window observable.
 
 ## Phase 3 — `otp-rails-resilience` (separate repo)
 - Railtie bridging Telemetry → ActiveSupport::Notifications; `Rails.supervisor.restart!` over

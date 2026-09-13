@@ -76,6 +76,18 @@ Adapters:
 - **`:solid_queue`** — wraps `bin/jobs` (`cmd:` overrides). Health = the active heartbeat
   below, never the `solid_queue_processes` table.
 
+For worker-level visibility on a cluster-mode `:puma` child, add the plugin to
+`config/puma.rb`:
+
+```ruby
+plugin :otp_rails
+```
+
+The master then heartbeats worker state over the socket: any missing worker is reported
+`"degraded"` (⇒ `[:otp_rails, :child, :degraded]` telemetry, `meta: {workers:, booted:,
+phase:}`) while puma replaces the worker itself — visibility only, no lifecycle change.
+Both adapters export `OTP_RAILS_CHILD_ID` so plugins and hooks heartbeat under the right id.
+
 ## Health & heartbeats
 
 Passive children are probed (PID, TCP, HTTP). Active children report themselves: the
