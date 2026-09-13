@@ -31,7 +31,12 @@ module OtpRails
         ChildSpec.new(
           id: spec.id, adapter: spec.adapter, restart: spec.restart,
           shutdown: spec.shutdown, start_timeout: spec.start_timeout,
-          opts: spec.opts.merge(cmd: spec.opts.fetch(:cmd, DEFAULT_CMD))
+          opts: spec.opts.merge(
+            cmd: spec.opts.fetch(:cmd, DEFAULT_CMD),
+            # Tag the child so the Heartbeat hook picks up its id from env;
+            # explicit env still wins.
+            env: { "OTP_RAILS_CHILD_ID" => spec.id.to_s }.merge(spec.opts.fetch(:env, {}))
+          )
         )
       end
     end

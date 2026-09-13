@@ -36,7 +36,10 @@ module OtpRails
           shutdown: spec.shutdown, start_timeout: spec.start_timeout,
           opts: spec.opts.merge(
             cmd: "bundle exec puma -C #{config}",
-            probe: { http: "http://127.0.0.1:#{port}#{HEALTH_PATH}" }
+            probe: { http: "http://127.0.0.1:#{port}#{HEALTH_PATH}" },
+            # Tag the child so the otp_rails puma plugin (and any app hook)
+            # heartbeats under the right id; explicit env still wins.
+            env: { "OTP_RAILS_CHILD_ID" => spec.id.to_s }.merge(spec.opts.fetch(:env, {}))
           )
         )
       end
