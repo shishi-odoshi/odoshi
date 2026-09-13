@@ -53,7 +53,12 @@ module OtpRails
       end
 
       def drain(handle, timeout:)
-        Process.kill("TERM", handle.pid)
+        # Signal the whole process group, not just handle.pid: children are
+        # group leaders (setsid / pgroup: true), and a shell-wrapped cmd
+        # ("a && b") is an sh wrapper whose real workload is a grandchild in
+        # that group — TERM to the wrapper alone orphans the workload while
+        # reporting a clean drain (issue #24).
+        group_signal("TERM", handle.pid)
         handle.waiter&.join(timeout)
         !handle.exit_status.nil?
       rescue Errno::ESRCH
@@ -65,6 +70,16 @@ module OtpRails
         handle.waiter&.join(2)
       rescue Errno::ESRCH
         nil
+      end
+
+      private
+
+      # TERM the group; fall back to the pid alone if the group is already
+      # gone by the time we signal (pure pid death races to the outer ESRCH).
+      def group_signal(sig, pid)
+        Process.kill(sig, -pid)
+      rescue Errno::ESRCH
+        Process.kill(sig, pid)
       end
     end
   end

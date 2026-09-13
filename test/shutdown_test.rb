@@ -69,7 +69,36 @@ class ShutdownTest < Minitest::Test
     end
   end
 
+  # Issue #24: a shell-wrapped cmd ("a && b") spawns an sh wrapper whose real
+  # workload is a grandchild in the same process group. Drain must TERM the
+  # group, or the workload survives a "clean" shutdown.
+  def test_shell_wrapped_command_grandchild_is_drained_on_stop
+    Dir.mktmpdir do |dir|
+      pidfile, termfile = File.join(dir, "c.pid"), File.join(dir, "c.term")
+      sup = OtpRails::Supervisor.new
+      sup.add_child(OtpRails::ChildSpec.new(id: :wrapped, adapter: :command, shutdown: 5,
+                                            opts: { cmd: "ruby #{FIXTURES}/pid_writer.rb #{pidfile} #{termfile} && true" }))
+      t = Thread.new { sup.run }
+      assert wait_until(10) { File.exist?(pidfile) && !File.read(pidfile).empty? },
+             "the wrapped workload should start and write its pid"
+      grandchild = File.read(pidfile).to_i
+      refute_equal grandchild, sup.live_pid(:wrapped), "cmd with && must actually produce an sh wrapper"
+      sup.stop
+      assert t.join(10), "supervisor should stop"
+      assert wait_until(5) { File.exist?(termfile) },
+             "the real workload (grandchild of the supervisor) must receive SIGTERM on drain"
+      assert wait_until(5) { !running?(grandchild) }, "no orphaned workload after a clean stop"
+    end
+  end
+
   private
+
+  # kill(0) succeeds on zombies (1.1 surprises log) — an exited-but-unreaped
+  # process is not an orphaned workload, so check the process STATE instead.
+  def running?(pid)
+    state = `ps -o state= -p #{pid}`.strip
+    !state.empty? && !state.start_with?("Z")
+  end
 
   def with_config(body)
     Dir.mktmpdir do |dir|
