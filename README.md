@@ -99,8 +99,10 @@ supervisor listens on a Unix socket (mode 0600) and exports `OTP_RAILS_SOCK` /
 ```
 
 A child that has heartbeated is judged by heartbeat freshness: 3 missed `health_interval`s
-⇒ `:degraded`, 6 ⇒ `:dead` ⇒ the strategy applies. Wrong token ⇒ the line is silently
-dropped. The same socket accepts `{"cmd":"restart","id":"jobs","token":"…"}`.
+⇒ `:degraded`, 6 ⇒ `:dead` ⇒ the strategy applies. Wrong token, non-string fields, or
+lines over 64 KiB ⇒ silently dropped. The same socket accepts
+`{"cmd":"restart","id":"jobs","token":"…"}` — a control restart is deliberate remediation
+(DESIGN §7: restarting is a feature), so it does not count toward restart intensity.
 
 From any child process (a Rails initializer, a Solid Queue hook — no Rails required):
 
