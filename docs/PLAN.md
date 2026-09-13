@@ -176,9 +176,14 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
       solid_queue 1.7 source; burst-proven zero cross-claims against a real Ruby worker;
       orphan contract verified (note: SQ FAILS pruned claims with ProcessPrunedError, it
       does not release them — otp-rails#41). GlobalID args and AJ retries out of scope v1.
-- [ ] Channels — decided 2026-09-13 (decision log): ActionCable-compatible wire protocol
-      over WebSockets, broadcasts from the Solid Cable schema, Turbo signed-stream auth.
-      In progress.
+- [x] Channels — shipped 2026-09-13 (beam PR #7): ActionCable v1 wire protocol (bandit +
+      websock_adapter, no full Phoenix) sourced read-only from the Solid Cable 3.0.x
+      schema; Turbo signed-stream auth (PBKDF2 verifier mirrored from Rails/turbo source,
+      pinned against Ruby-produced vectors); replay-avoidance mirrors solid_cable's own
+      cursor model. v1 limits documented: no cookie/session auth, no channel actions,
+      no server disconnect frames (beam OPEN_QUESTIONS §10–§14).
+
+Phase 4 complete — every line item of the Phase 0 plan has shipped.
 
 ## Open questions (add here, don't guess)
 
