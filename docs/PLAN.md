@@ -154,9 +154,19 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   boot time. The cluster fixture boots workers with a 1s app-load delay (the realistic
   Rails shape); no-preload is also what makes the missing-worker window observable.
 
-## Phase 3 — `otp-rails-resilience` (separate repo)
-- Railtie bridging Telemetry → ActiveSupport::Notifications; `Rails.supervisor.restart!` over
+## Phase 3 — `otp-rails-resilience` (separate repo) — DONE 2026-09-13
+- [x] Railtie bridging Telemetry → ActiveSupport::Notifications; `Rails.supervisor.restart!` over
   the socket; breaker defaults for AR pool / Net::HTTP / Redis; `bin/rails boot:check`.
+- Shipped: https://github.com/shishi-odoshi/otp-rails-resilience — CI green (ubuntu+macos ×
+  3.2/3.3/3.4), 34 tests, real-process style (real UNIXServer as the supervisor, real AR pool
+  exhaustion, real TCP timeouts). Version 0.1.0.dev, NOT yet on RubyGems.
+- Notable semantics (options + rationale in that repo's docs/OPEN_QUESTIONS.md):
+  unsupervised `restart!` RAISES (a remediation must never silently not happen);
+  breakers are own-code with fail-open storage (Faulty's rule, §7); HTTP breaker is
+  per host:port; boot:check re-runs app initializers in a fork and fails on raise or
+  tracked class-level drift — README states exactly what it doesn't catch.
+- The telemetry bridge is in-process only: supervisor-process events don't cross the
+  socket — forwarding them would need a §5/§6 contract edit (explicitly not done).
 
 ## Phase 4 — `beam` (Elixir, separate repo)
 - Ports-based supervisor consuming §5 NDJSON; then GoodJob-Elixir shared queue; then Phoenix channels.
