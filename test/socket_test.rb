@@ -54,6 +54,88 @@ class SocketTest < Minitest::Test
     end
   end
 
+  # Issue #16/#27: valid-token heartbeats for ids that match no child must be
+  # dropped at intake, not hoarded forever.
+  def test_heartbeats_for_unknown_ids_are_dropped
+    Dir.mktmpdir do |dir|
+      with_sup(dir, cmd: "sleep 30") do |sup, _events|
+        sock = UNIXSocket.new(File.join(dir, "s.sock"))
+        50.times { |i| sock.puts({ id: "ghost#{i}", state: "healthy", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json) }
+        sock.puts({ id: "hb", state: "healthy", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json)
+        assert wait_until(10) { heartbeat_active?(sup) }, "the real child's heartbeat still lands"
+        assert_equal [:hb], sup.instance_variable_get(:@heartbeats).keys, "ghost ids must not be recorded"
+        sock.close
+      end
+    end
+  end
+
+  # Issue #27: an over-long line is malformed — capped in memory, discarded,
+  # and the connection keeps working afterwards.
+  def test_oversized_lines_are_dropped_and_the_connection_survives
+    Dir.mktmpdir do |dir|
+      with_sup(dir, cmd: "sleep 30") do |sup, _events|
+        sock = UNIXSocket.new(File.join(dir, "s.sock"))
+        sock.write("x" * (500 * 1024)); sock.write("\n")
+        sock.puts({ id: "hb", state: "healthy", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json)
+        assert wait_until(10) { heartbeat_active?(sup) },
+               "a valid heartbeat after a 500KB junk line must still be processed"
+        sock.close
+      end
+    end
+  end
+
+  # Issue #27: non-string id/state/cmd are malformed — dropped without killing
+  # the connection thread (or dispatching bogus control).
+  def test_non_string_fields_are_dropped_and_the_connection_survives
+    Dir.mktmpdir do |dir|
+      with_sup(dir, cmd: "sleep 30") do |sup, events|
+        sock = UNIXSocket.new(File.join(dir, "s.sock"))
+        sock.puts({ id: 123, state: "healthy", ts: 0, token: sup.heartbeat_token }.to_json)
+        sock.puts({ id: "hb", state: { nested: true }, ts: 0, token: sup.heartbeat_token }.to_json)
+        sock.puts({ cmd: false, id: "hb", token: sup.heartbeat_token }.to_json)
+        sock.puts({ cmd: "restart", id: 42, token: sup.heartbeat_token }.to_json)
+        sleep 0.5
+        refute heartbeat_active?(sup), "malformed heartbeats must not be recorded"
+        assert_equal 1, spawns(events, :hb), "malformed control must not restart anything"
+        sock.puts({ id: "hb", state: "healthy", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json)
+        assert wait_until(10) { heartbeat_active?(sup) }, "the connection must survive malformed lines"
+        sock.close
+      end
+    end
+  end
+
+  # Issue #25: a heartbeat naming a child with health_interval: nil (subtree
+  # specs) crashed the whole tree with a nil division. It must be judged
+  # passively instead.
+  def test_heartbeat_for_nil_interval_child_does_not_crash_the_tree
+    Dir.mktmpdir do |dir|
+      sup = OtpRails::Supervisor.new(socket_path: File.join(dir, "s.sock"))
+      sup.add_child(OtpRails::ChildSpec.new(id: :quiet, adapter: :command, shutdown: 2,
+                                            health_interval: nil, opts: { cmd: "sleep 30" }))
+      capture_events do |events|
+        t = Thread.new { sup.run }
+        assert wait_until(10) { spawns(events, :quiet) >= 1 }, "child should start"
+        sock = UNIXSocket.new(File.join(dir, "s.sock"))
+        sock.puts({ id: "quiet", state: "healthy", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json)
+        sleep 0.6
+        assert t.alive?, "a heartbeat for a nil-interval child must not crash the supervisor"
+        sock.puts({ cmd: "restart", id: "quiet", token: sup.heartbeat_token }.to_json)
+        assert wait_until(10) { spawns(events, :quiet) >= 2 }, "tree must still be fully operational"
+        sock.close
+        sup.stop
+        assert t.join(10), "supervisor should stop cleanly"
+      end
+    end
+  end
+
+  # Issue #31: an unusable socket path is a config problem (exit 78), not a
+  # raw ArgumentError stacktrace.
+  def test_unusable_socket_path_raises_config_error
+    sup = OtpRails::Supervisor.new(socket_path: "/tmp/#{"x" * 300}/s.sock")
+    sup.add_child(OtpRails::ChildSpec.new(id: :a, adapter: :command, opts: { cmd: "sleep 1" }))
+    assert_raises(OtpRails::ConfigError) { sup.run }
+  end
+
   private
 
   def with_sup(dir, cmd:)

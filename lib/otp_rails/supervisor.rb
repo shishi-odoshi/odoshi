@@ -18,7 +18,14 @@ module OtpRails
       return unless socket_path
       @socket = SocketServer.new(
         path: socket_path,
-        on_heartbeat: ->(msg) { @heartbeats[msg["id"].to_sym] = { at: mono_now, state: msg["state"] } },
+        # Heartbeats for ids that aren't children of THIS supervisor are
+        # dropped at intake: ghost ids must not grow the table unboundedly
+        # (issue #16/#27). Subtree-grandchild routing is the open flat-id
+        # question — until it's decided, their beats are dropped, not hoarded.
+        on_heartbeat: lambda { |msg|
+          id = msg["id"].to_sym
+          @heartbeats[id] = { at: mono_now, state: msg["state"] } if @children.any? { |c| c.id == id }
+        },
         on_control: ->(msg) { @queue << { type: :control, cmd: msg["cmd"], id: msg["id"].to_s.to_sym } }
       )
     end
@@ -142,7 +149,10 @@ module OtpRails
     # back to the adapter's passive probe.
     def effective_health(spec, adapter, handle)
       hb = @heartbeats[spec.id]
-      return adapter.health(handle) unless hb
+      # No heartbeat ⇒ passive probe. A nil health_interval (subtree specs)
+      # also falls through: freshness aging needs an interval, and dividing
+      # by nil crashed the whole tree when a heartbeat named such an id (#25).
+      return adapter.health(handle) unless hb && spec.health_interval
       missed = (mono_now - hb[:at]) / spec.health_interval
       return :dead if missed >= 6
       return :degraded if missed >= 3
