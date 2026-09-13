@@ -55,7 +55,10 @@ class PumaPluginTest < Minitest::Test
                       id: :web, adapter: :puma, shutdown: 5, start_timeout: WAIT, health_interval: 0.2,
                       opts: { config: "#{RACK_APP}/#{config}", port: port,
                               env: { "PUMA_TEST_PORT" => port.to_s, "OTP_RAILS_HEARTBEAT_INTERVAL" => "0.1",
-                                     "BOOT_DELAY" => "1.0" } }
+                                     # 3s worker boot ⇒ the missing-worker window is wide
+                                     # enough to survive scheduling starvation on loaded
+                                     # 2-vCPU CI runners (1s flaked there once).
+                                     "BOOT_DELAY" => "3.0" } }
                     ))
       capture_events do |events|
         t = Thread.new { sup.run }
