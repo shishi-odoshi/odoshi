@@ -151,6 +151,11 @@ subscriber and a JSON-lines exporter ship by default (`Telemetry::Subscribers`).
   restarts the supervisor; each child runs in its own session/process group, so stale
   orphans are findable and killable by pgid.
 - macOS also caps Unix socket paths at ~104 bytes — keep `socket PATH` short.
+- Compound commands (`cmd: "a && b"`) run under an `sh` wrapper. Drain and kill signal the
+  whole process group, so supervised shutdown covers the real workload — but SIGKILL-of-
+  the-supervisor orphan prevention (pdeathsig) arms only the wrapper: on Linux the wrapper
+  gets SIGTERM and its children are orphaned. Prefer single-exec commands for children
+  that must never outlive the supervisor.
 
 ## Development
 

@@ -66,6 +66,24 @@ class LifecycleTest < Minitest::Test
     end
   end
 
+  # Issue #15: a cmd that cannot be spawned is a child crash like any other —
+  # restart, backoff, escalate, exit 70. It previously crashed the whole
+  # supervisor with a raw Errno::ENOENT on macOS (exit 1) while Linux
+  # restart-looped to escalation: same misconfig, different behavior.
+  def test_unspawnable_command_counts_as_a_crash_and_escalates
+    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
+                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 1, within: 60),
+                                   backoff: OtpRails::Backoff.new(kind: :none))
+    sup.add_child(OtpRails::ChildSpec.new(id: :bad, adapter: :command, shutdown: 1,
+                                          opts: { cmd: "definitely-not-a-real-binary-xyz" }))
+    capture_events do |events|
+      assert_raises(OtpRails::Escalation) { sup.run }
+      exit_codes = events.select { |e| e[:event].last == :exit && e[:metadata][:id] == :bad }
+                         .map { |e| e[:measurements][:exit_code] }.uniq
+      assert_equal [127], exit_codes, "an unspawnable cmd must surface as exit 127, not a raised exception"
+    end
+  end
+
   private
 
   def restart_attempts(events, id)
