@@ -11,6 +11,12 @@ Gem::Specification.new do |s|
   s.authors     = ["Tim"]
   s.license     = "MIT"
   s.homepage    = "https://github.com/shishi-odoshi/otp-rails"
+  s.metadata    = {
+    "homepage_uri"    => s.homepage,
+    "source_code_uri" => s.homepage,
+    "changelog_uri"   => "#{s.homepage}/blob/main/CHANGELOG.md",
+    "bug_tracker_uri" => "#{s.homepage}/issues"
+  }
   s.required_ruby_version = ">= 3.2"
   s.files       = Dir["lib/**/*.rb", "exe/*", "README.md", "CHANGELOG.md", "LICENSE"]
   s.bindir      = "exe"
