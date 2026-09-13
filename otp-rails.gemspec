@@ -8,7 +8,7 @@ Gem::Specification.new do |s|
   s.summary     = "OTP-style supervision trees for Rails processes"
   s.description = "A slim supervisor that starts, links, health-checks, and restarts the " \
                   "processes of a Rails app (web, jobs, cable, cron) with OTP strategies."
-  s.authors     = ["Tim"]
+  s.authors     = ["timimsms"]
   s.license     = "MIT"
   s.homepage    = "https://github.com/shishi-odoshi/otp-rails"
   s.metadata    = {
