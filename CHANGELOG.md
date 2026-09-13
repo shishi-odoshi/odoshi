@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.1 — 2026-09-12
+
+- Gemspec only: author listed as `timimsms`. No code changes.
+
 ## v0.1.0 — 2026-09-12
 
 First release: a slim, zero-runtime-dependency, OTP-style process supervisor for the
