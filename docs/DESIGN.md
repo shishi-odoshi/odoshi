@@ -211,3 +211,9 @@ None blocking Phase 1.
   `token` documented in the example (both implementations always required it), string-typed
   fields, 64 KiB line cap, `ts` informational. Behavior was already true in Ruby; beam
   mirrors it. No message shape changed.
+- 2026-09-13 — Phase 4 shared queue: beam consumes the SOLID QUEUE schema (Tim's call;
+  supersedes the PLAN's "GoodJob-Elixir" wording, which predated the stack standardizing
+  on Solid Queue). Postgres-only v1. Execution model: Rails enqueues via ActiveJob as
+  usual; beam claims only designated queue(s) (default "elixir") with registered Elixir
+  handlers, mirroring the Ruby worker's claim/finish/fail/heartbeat semantics so both
+  runners share the tables safely. Ruby workers keep all other queues.

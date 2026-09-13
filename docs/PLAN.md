@@ -169,7 +169,12 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   socket — forwarding them would need a §5/§6 contract edit (explicitly not done).
 
 ## Phase 4 — `beam` (Elixir, separate repo)
-- Ports-based supervisor consuming §5 NDJSON; then GoodJob-Elixir shared queue; then Phoenix channels.
+- [x] Ports-based supervisor consuming §5 NDJSON — shipped 2026-09-13
+      (https://github.com/shishi-odoshi/beam, plus the Ruby⇄Elixir contract harness in its CI).
+- [ ] Shared queue — decided 2026-09-13 (decision log): SOLID QUEUE schema, not GoodJob;
+      Postgres-only v1; beam runs designated queue(s) with registered Elixir handlers,
+      mirroring the Ruby worker's claim/finish/fail/heartbeat semantics. In progress.
+- [ ] Phoenix channels.
 
 ## Open questions (add here, don't guess)
 
