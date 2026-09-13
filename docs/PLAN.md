@@ -123,9 +123,19 @@ Reference: `docs/DESIGN.md` (§ numbers below point there).
   `rake build`/`release`; built gem smoke-tested in an isolated GEM_HOME (`otp-rails version`
   and `check` both work from the installed gem). CHANGELOG.md ships in the gem.
 
-## Phase 2 — `otp-rails-template` (separate repo, after 1.8)
-- `rails new --template` script adding the gem, `config/supervisor.rb`, `bin/supervise`,
+## Phase 2 — `otp-rails-template` (separate repo, after 1.8) — DONE 2026-09-13
+- [x] `rails new --template` script adding the gem, `config/supervisor.rb`, `bin/supervise`,
   `rake chaos:kill[child]` tasks, and a CI job that runs each chaos task and asserts recovery < 10s.
+- Shipped: https://github.com/shishi-odoshi/otp-rails-template — CI generates a fresh app from
+  the template every run (no drift), boots it under bin/supervise in production env, and runs
+  the chaos suite. Measured recovery: web 1.7s, jobs 1.5s (bar is 10s).
+- Surprise: the json 3.0.2 gem (released days ago) breaks ActiveSupport::JSON.decode on
+  Rails 8.1.3 — stock Solid Queue crash-loops in ANY fresh `rails new` app. Not an otp-rails
+  bug (the supervisor faithfully kept restarting it, which is how it surfaced). Template pins
+  `json < 3.0` with a removal note; drop the pin when Rails ships a fix.
+- Surprise: pgrep-based chaos tooling needs [b]racket-class patterns (self-match trap) and
+  must match RETITLED processes — live puma shows "puma 7.x (tcp://...)", solid queue shows
+  "solid-queue-supervisor(...)"; neither keeps its spawn cmdline.
 
 ## Phase 2.5 — Puma plugin (§4.2 step 2)
 - `lib/puma/plugin/otp_rails.rb` using `on_worker_boot/shutdown` to send worker-level heartbeats
