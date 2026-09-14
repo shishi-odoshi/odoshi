@@ -35,7 +35,15 @@ module OtpRails
                   measurements: measurements, metadata: metadata,
                   ts: Process.clock_gettime(Process::CLOCK_REALTIME) }
         subs = @mutex.synchronize { @subscribers.dup }
-        subs.each { |s| s.call(event) }
+        subs.each do |s|
+          s.call(event)
+        rescue StandardError => e
+          # A subscriber must never break the bus: emit is called from the
+          # supervisor loop and monitor threads, and other subscribers (the
+          # Elixir sidecar exporter, the resilience bridge) must keep
+          # receiving events even when one subscriber raises (resilience#1).
+          warn "[otp-rails] telemetry subscriber raised: #{e.class}: #{e.message}"
+        end
         event
       end
     end
