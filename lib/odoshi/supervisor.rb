@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # DESIGN §3.1 / §3.3. One supervisor, an ordered set of children, one strategy.
   # Nested supervisors (subtrees) are ordinary children via Adapters::SupervisorAdapter:
   # a subtree escalating shows up here as a crashed child exit.
@@ -32,7 +32,7 @@ module OtpRails
     end
 
     # The per-boot token children must echo in every heartbeat (nil when the
-    # socket is disabled). Exported to children as OTP_RAILS_TOKEN.
+    # socket is disabled). Exported to children as ODOSHI_TOKEN.
     def heartbeat_token = @socket&.token
 
     def add_child(spec)
@@ -44,7 +44,7 @@ module OtpRails
     # Blocks until the tree is shut down. Raises Escalation if intensity is exceeded.
     def run
       Telemetry.emit(:"supervisor.start", {}, { strategy: strategy, children: ids })
-      @socket&.start # before children, so they inherit OTP_RAILS_SOCK/_TOKEN
+      @socket&.start # before children, so they inherit ODOSHI_SOCK/_TOKEN
       @children.each do |spec|
         break if @stop_requested
         start_child(spec)

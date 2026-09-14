@@ -1,13 +1,13 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   module Adapters
     # DESIGN §4.1 / §9 — :solid_queue wraps the Solid Queue supervisor
     # (`bin/jobs`). Health is the ACTIVE heartbeat (§5), NOT the
     # solid_queue_processes table: the app sends heartbeats via the tiny
     # Rails-free hook, e.g. from an initializer:
     #
-    #   require "otp_rails/heartbeat"
-    #   OtpRails::Heartbeat.start(id: "jobs")
+    #   require "odoshi/heartbeat"
+    #   Odoshi::Heartbeat.start(id: "jobs")
     #
     # Once the first heartbeat arrives the supervisor judges the child by
     # heartbeat freshness (3 missed intervals ⇒ :degraded, 6 ⇒ :dead);
@@ -35,7 +35,7 @@ module OtpRails
             cmd: spec.opts.fetch(:cmd, DEFAULT_CMD),
             # Tag the child so the Heartbeat hook picks up its id from env;
             # explicit env still wins.
-            env: { "OTP_RAILS_CHILD_ID" => spec.id.to_s }.merge(spec.opts.fetch(:env, {}))
+            env: { "ODOSHI_CHILD_ID" => spec.id.to_s }.merge(spec.opts.fetch(:env, {}))
           )
         )
       end

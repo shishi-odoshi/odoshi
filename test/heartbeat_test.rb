@@ -9,8 +9,8 @@ require "tmpdir"
 class HeartbeatTest < Minitest::Test
   def test_start_returns_the_instance_and_stop_ends_the_thread
     with_server do |_dir, _server, _lines|
-      beat = OtpRails::Heartbeat.start(id: "x", interval: 0.05)
-      assert_kind_of OtpRails::Heartbeat, beat, "start must return the Heartbeat (issue #23)"
+      beat = Odoshi::Heartbeat.start(id: "x", interval: 0.05)
+      assert_kind_of Odoshi::Heartbeat, beat, "start must return the Heartbeat (issue #23)"
       assert beat.alive?
       beat.stop
       assert wait_until(5) { !beat.alive? }, "stop must end the beating thread"
@@ -20,7 +20,7 @@ class HeartbeatTest < Minitest::Test
   def test_raising_state_lambda_falls_back_to_last_good_state_and_keeps_beating
     with_server do |_dir, _server, lines|
       calls = 0
-      beat = OtpRails::Heartbeat.start(id: "x", interval: 0.05,
+      beat = Odoshi::Heartbeat.start(id: "x", interval: 0.05,
                                        state: -> { (calls += 1) == 3 ? raise("boom") : "degraded" })
       assert wait_until(10) { lines.size >= 5 }, "the thread must survive a raising state lambda (issue #26)"
       states = lines.map { |l| JSON.parse(l)["state"] }.uniq
@@ -32,7 +32,7 @@ class HeartbeatTest < Minitest::Test
   def test_unencodable_meta_degrades_to_empty_meta_and_keeps_beating
     with_server do |_dir, _server, lines|
       bad = (+"\xff\xfe").force_encoding("UTF-8") # unencodable by JSON
-      beat = OtpRails::Heartbeat.start(id: "x", interval: 0.05, meta: -> { { junk: bad } })
+      beat = Odoshi::Heartbeat.start(id: "x", interval: 0.05, meta: -> { { junk: bad } })
       assert wait_until(10) { lines.size >= 3 }, "the thread must survive unencodable meta (issue #26)"
       assert_equal [{}], lines.map { |l| JSON.parse(l)["meta"] }.uniq, "bad meta is dropped, the beat is not"
       beat.stop
@@ -43,7 +43,7 @@ class HeartbeatTest < Minitest::Test
     Dir.mktmpdir do |dir|
       path = File.join(dir, "s.sock")
       with_env(path) do
-        beat = OtpRails::Heartbeat.start(id: "x", interval: 0.01) # nothing listening at all
+        beat = Odoshi::Heartbeat.start(id: "x", interval: 0.01) # nothing listening at all
         sleep 0.3 # ~30 failed connect/beat cycles
         before = fd_count
         sleep 1.0 # ~100 more
@@ -78,11 +78,11 @@ class HeartbeatTest < Minitest::Test
   end
 
   def with_env(path)
-    old = [ENV["OTP_RAILS_SOCK"], ENV["OTP_RAILS_TOKEN"]]
-    ENV["OTP_RAILS_SOCK"], ENV["OTP_RAILS_TOKEN"] = path, "test-token"
+    old = [ENV["ODOSHI_SOCK"], ENV["ODOSHI_TOKEN"]]
+    ENV["ODOSHI_SOCK"], ENV["ODOSHI_TOKEN"] = path, "test-token"
     yield
   ensure
-    ENV["OTP_RAILS_SOCK"], ENV["OTP_RAILS_TOKEN"] = old
+    ENV["ODOSHI_SOCK"], ENV["ODOSHI_TOKEN"] = old
   end
 
   def fd_count = Dir["/dev/fd/*"].size

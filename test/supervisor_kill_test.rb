@@ -6,11 +6,11 @@ class SupervisorKillTest < Minitest::Test
   include TelemetryCapture
 
   def build(strategy: :one_for_one, max_restarts: 5)
-    sup = OtpRails::Supervisor.new(strategy: strategy,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: max_restarts, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :none))
-    sup.add_child(OtpRails::ChildSpec.new(id: :a, adapter: :command, shutdown: 2, opts: { cmd: "sleep 30" }))
-    sup.add_child(OtpRails::ChildSpec.new(id: :b, adapter: :command, shutdown: 2, opts: { cmd: "sleep 30" }))
+    sup = Odoshi::Supervisor.new(strategy: strategy,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: max_restarts, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none))
+    sup.add_child(Odoshi::ChildSpec.new(id: :a, adapter: :command, shutdown: 2, opts: { cmd: "sleep 30" }))
+    sup.add_child(Odoshi::ChildSpec.new(id: :b, adapter: :command, shutdown: 2, opts: { cmd: "sleep 30" }))
     sup
   end
 
@@ -49,13 +49,13 @@ class SupervisorKillTest < Minitest::Test
     Dir.mktmpdir do |dir|
       log = File.join(dir, "events.log")
       fixtures = File.expand_path("fixtures", __dir__)
-      sup = OtpRails::Supervisor.new(strategy: :rest_for_one,
-                                     intensity: OtpRails::RestartIntensity.new(max_restarts: 5, within: 60),
-                                     backoff: OtpRails::Backoff.new(kind: :none))
-      sup.add_child(OtpRails::ChildSpec.new(id: :a, adapter: :command, shutdown: 5, opts: { cmd: "sleep 30" }))
-      sup.add_child(OtpRails::ChildSpec.new(id: :b, adapter: :command, shutdown: 5,
+      sup = Odoshi::Supervisor.new(strategy: :rest_for_one,
+                                     intensity: Odoshi::RestartIntensity.new(max_restarts: 5, within: 60),
+                                     backoff: Odoshi::Backoff.new(kind: :none))
+      sup.add_child(Odoshi::ChildSpec.new(id: :a, adapter: :command, shutdown: 5, opts: { cmd: "sleep 30" }))
+      sup.add_child(Odoshi::ChildSpec.new(id: :b, adapter: :command, shutdown: 5,
                                             opts: { cmd: "ruby #{fixtures}/term_logger.rb b #{log} 0.1" }))
-      sup.add_child(OtpRails::ChildSpec.new(id: :c, adapter: :command, shutdown: 5,
+      sup.add_child(Odoshi::ChildSpec.new(id: :c, adapter: :command, shutdown: 5,
                                             opts: { cmd: "ruby #{fixtures}/term_logger.rb c #{log} 0.1" }))
       capture_events do |events|
         t = Thread.new { sup.run }
@@ -85,10 +85,10 @@ class SupervisorKillTest < Minitest::Test
   end
 
   def test_escalates_when_intensity_exceeded
-    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 1, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :none))
-    sup.add_child(OtpRails::ChildSpec.new(id: :crashy, adapter: :command, shutdown: 1, opts: { cmd: "exit 1" }))
-    assert_raises(OtpRails::Escalation) { sup.run }
+    sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 1, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none))
+    sup.add_child(Odoshi::ChildSpec.new(id: :crashy, adapter: :command, shutdown: 1, opts: { cmd: "exit 1" }))
+    assert_raises(Odoshi::Escalation) { sup.run }
   end
 end

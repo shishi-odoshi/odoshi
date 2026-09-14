@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   module Adapters
     # DESIGN §4.1 :command — arbitrary command. Health = PID alive (+ optional probe, TODO).
     class Command < Adapter

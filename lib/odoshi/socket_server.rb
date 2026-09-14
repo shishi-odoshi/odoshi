@@ -4,7 +4,7 @@ require "json"
 require "securerandom"
 require "fileutils"
 
-module OtpRails
+module Odoshi
   # DESIGN §5 active heartbeats + §9 control transport, PLAN 1.4.
   # Newline-delimited JSON over a Unix socket, mode 0600, per-boot token —
   # no MessagePack, no length prefixes, no versions (hard rule 4). This wire
@@ -25,7 +25,7 @@ module OtpRails
       @conns = []
     end
 
-    # Binds, chmods, and exports OTP_RAILS_SOCK / OTP_RAILS_TOKEN so children
+    # Binds, chmods, and exports ODOSHI_SOCK / ODOSHI_TOKEN so children
     # spawned afterwards inherit them (DESIGN §9). Call before starting children.
     def start
       begin
@@ -38,8 +38,8 @@ module OtpRails
       end
       @server.listen(128) # default backlog is 5 on macOS; bursts got ECONNREFUSED
       File.chmod(0o600, @path)
-      ENV["OTP_RAILS_SOCK"] = @path
-      ENV["OTP_RAILS_TOKEN"] = @token
+      ENV["ODOSHI_SOCK"] = @path
+      ENV["ODOSHI_TOKEN"] = @token
       @acceptor = Thread.new do
         loop do
           conn = @server.accept

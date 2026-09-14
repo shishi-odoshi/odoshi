@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # Evaluates config/supervisor.rb WITHOUT Rails loaded (DESIGN §9).
   #
   #   strategy :rest_for_one
@@ -26,7 +26,7 @@ module OtpRails
       @children = []
       # DESIGN §5/§9 default; socket nil disables. Only the ROOT supervisor
       # listens — subtrees never bind their own socket.
-      @socket_path = root ? "tmp/otp-rails.sock" : nil
+      @socket_path = root ? "tmp/odoshi.sock" : nil
     end
 
     def strategy(kind) = @strategy = kind

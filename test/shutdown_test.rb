@@ -6,14 +6,14 @@ require "tmpdir"
 # orphan prevention when the supervisor itself is SIGKILLed.
 class ShutdownTest < Minitest::Test
   FIXTURES = File.expand_path("fixtures", __dir__)
-  EXE = File.expand_path("../exe/otp-rails", __dir__)
+  EXE = File.expand_path("../exe/odoshi", __dir__)
 
   def test_stop_all_drains_in_reverse_start_order_and_waits_for_each
     Dir.mktmpdir do |dir|
       log = File.join(dir, "events.log")
-      sup = OtpRails::Supervisor.new
+      sup = Odoshi::Supervisor.new
       %i[a b c].each do |id|
-        sup.add_child(OtpRails::ChildSpec.new(id: id, adapter: :command, shutdown: 5,
+        sup.add_child(Odoshi::ChildSpec.new(id: id, adapter: :command, shutdown: 5,
                                               opts: { cmd: "ruby #{FIXTURES}/term_logger.rb #{id} #{log} 0.3" }))
       end
       t = Thread.new { sup.run }
@@ -52,7 +52,7 @@ class ShutdownTest < Minitest::Test
   end
 
   def test_children_get_sigterm_when_supervisor_is_sigkilled
-    unless OtpRails::OrphanGuard.available?
+    unless Odoshi::OrphanGuard.available?
       skip "orphan prevention needs prctl(PR_SET_PDEATHSIG); unavailable on #{RUBY_PLATFORM} (documented limitation, README)"
     end
     Dir.mktmpdir do |dir|
@@ -75,8 +75,8 @@ class ShutdownTest < Minitest::Test
   def test_shell_wrapped_command_grandchild_is_drained_on_stop
     Dir.mktmpdir do |dir|
       pidfile, termfile = File.join(dir, "c.pid"), File.join(dir, "c.term")
-      sup = OtpRails::Supervisor.new
-      sup.add_child(OtpRails::ChildSpec.new(id: :wrapped, adapter: :command, shutdown: 5,
+      sup = Odoshi::Supervisor.new
+      sup.add_child(Odoshi::ChildSpec.new(id: :wrapped, adapter: :command, shutdown: 5,
                                             opts: { cmd: "ruby #{FIXTURES}/pid_writer.rb #{pidfile} #{termfile} && true" }))
       t = Thread.new { sup.run }
       assert wait_until(10) { File.exist?(pidfile) && !File.read(pidfile).empty? },

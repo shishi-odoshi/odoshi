@@ -42,10 +42,10 @@ class HealthLoopTest < Minitest::Test
     Dir.mktmpdir do |dir|
       flag = File.join(dir, "sick.flag")
       port = free_port
-      sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                     intensity: OtpRails::RestartIntensity.new(max_restarts: 10, within: 60),
-                                     backoff: OtpRails::Backoff.new(kind: :none))
-      sup.add_child(OtpRails::ChildSpec.new(
+      sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                     intensity: Odoshi::RestartIntensity.new(max_restarts: 10, within: 60),
+                                     backoff: Odoshi::Backoff.new(kind: :none))
+      sup.add_child(Odoshi::ChildSpec.new(
                       id: :flaky, adapter: :command, shutdown: 2, start_timeout: 10,
                       health_interval: 0.2, degraded_restart_after: degraded_restart_after,
                       opts: { cmd: "ruby #{FIXTURES}/flaky_http_server.rb #{port} #{flag}",

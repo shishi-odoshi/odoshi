@@ -1,4 +1,6 @@
-# otp-rails — Build Plan
+# odoshi (né otp-rails) — Build Plan
+
+> Renamed 2026-09-13 (DESIGN decision log). Historical entries below keep the old name.
 
 Work items in order. Each has an acceptance test. Tick when green and committed.
 Reference: `docs/DESIGN.md` (§ numbers below point there).

@@ -5,7 +5,7 @@ require "socket"
 require "tmpdir"
 
 # PLAN 2.5 — puma plugin: the master heartbeats worker-level state over the
-# §5 socket. A missing worker ⇒ reported "degraded" ⇒ [:otp_rails, :child,
+# §5 socket. A missing worker ⇒ reported "degraded" ⇒ [:odoshi, :child,
 # :degraded] telemetry — while puma replaces its own worker and the
 # supervisor changes NO lifecycle (the child is never respawned).
 class PumaPluginTest < Minitest::Test
@@ -42,19 +42,19 @@ class PumaPluginTest < Minitest::Test
   private
 
   # A :puma child with the plugin fixture, fast heartbeats, and the socket on.
-  # No OTP_RAILS_CHILD_ID is passed: the adapter must inject it (the plugin
+  # No ODOSHI_CHILD_ID is passed: the adapter must inject it (the plugin
   # heartbeating as :web proves that end-to-end).
   def with_plugin_sup(config)
     Dir.mktmpdir do |dir|
       port = free_port
-      sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                     intensity: OtpRails::RestartIntensity.new(max_restarts: 5, within: 60),
-                                     backoff: OtpRails::Backoff.new(kind: :none),
+      sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                     intensity: Odoshi::RestartIntensity.new(max_restarts: 5, within: 60),
+                                     backoff: Odoshi::Backoff.new(kind: :none),
                                      socket_path: File.join(dir, "s.sock"))
-      sup.add_child(OtpRails::ChildSpec.new(
+      sup.add_child(Odoshi::ChildSpec.new(
                       id: :web, adapter: :puma, shutdown: 5, start_timeout: WAIT, health_interval: 0.2,
                       opts: { config: "#{RACK_APP}/#{config}", port: port,
-                              env: { "PUMA_TEST_PORT" => port.to_s, "OTP_RAILS_HEARTBEAT_INTERVAL" => "0.1",
+                              env: { "PUMA_TEST_PORT" => port.to_s, "ODOSHI_HEARTBEAT_INTERVAL" => "0.1",
                                      # 3s worker boot ⇒ the missing-worker window is wide
                                      # enough to survive scheduling starvation on loaded
                                      # 2-vCPU CI runners (1s flaked there once).

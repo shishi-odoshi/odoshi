@@ -10,8 +10,8 @@ class LifecycleTest < Minitest::Test
   # out start_timeout (platforms SIGKILL after their grace period).
   def test_stop_is_prompt_while_a_child_is_stuck_starting
     port = free_port # nothing ever listens
-    sup = OtpRails::Supervisor.new
-    sup.add_child(OtpRails::ChildSpec.new(id: :stuck, adapter: :command, shutdown: 2, start_timeout: 30,
+    sup = Odoshi::Supervisor.new
+    sup.add_child(Odoshi::ChildSpec.new(id: :stuck, adapter: :command, shutdown: 2, start_timeout: 30,
                                           opts: { cmd: "sleep 30", probe: { tcp: port } }))
     capture_events do |events|
       t = Thread.new { sup.run }
@@ -26,10 +26,10 @@ class LifecycleTest < Minitest::Test
   # Issue #19: one healthy health_interval resets the backoff ladder — a
   # rarely-crashing child must not converge to permanent max backoff.
   def test_backoff_attempts_reset_after_a_healthy_interval
-    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 10, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :exponential, base: 0.05, cap: 1))
-    sup.add_child(OtpRails::ChildSpec.new(id: :a, adapter: :command, shutdown: 2, health_interval: 0.2,
+    sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 10, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :exponential, base: 0.05, cap: 1))
+    sup.add_child(Odoshi::ChildSpec.new(id: :a, adapter: :command, shutdown: 2, health_interval: 0.2,
                                           opts: { cmd: "sleep 30" }))
     capture_events do |events|
       t = Thread.new { sup.run }
@@ -49,10 +49,10 @@ class LifecycleTest < Minitest::Test
   # Issue #20: a child that exits and is not restarted must leave no stale
   # @live entry — no corpse drains at shutdown, no ghost live_pid.
   def test_non_restarted_children_leave_no_stale_entry
-    sup = OtpRails::Supervisor.new
-    sup.add_child(OtpRails::ChildSpec.new(id: :tmp, adapter: :command, restart: :temporary,
+    sup = Odoshi::Supervisor.new
+    sup.add_child(Odoshi::ChildSpec.new(id: :tmp, adapter: :command, restart: :temporary,
                                           shutdown: 2, opts: { cmd: "exit 0" }))
-    sup.add_child(OtpRails::ChildSpec.new(id: :keeper, adapter: :command, shutdown: 2,
+    sup.add_child(Odoshi::ChildSpec.new(id: :keeper, adapter: :command, shutdown: 2,
                                           opts: { cmd: "sleep 30" }))
     capture_events do |events|
       t = Thread.new { sup.run }
@@ -71,13 +71,13 @@ class LifecycleTest < Minitest::Test
   # supervisor with a raw Errno::ENOENT on macOS (exit 1) while Linux
   # restart-looped to escalation: same misconfig, different behavior.
   def test_unspawnable_command_counts_as_a_crash_and_escalates
-    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 1, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :none))
-    sup.add_child(OtpRails::ChildSpec.new(id: :bad, adapter: :command, shutdown: 1,
+    sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 1, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none))
+    sup.add_child(Odoshi::ChildSpec.new(id: :bad, adapter: :command, shutdown: 1,
                                           opts: { cmd: "definitely-not-a-real-binary-xyz" }))
     capture_events do |events|
-      assert_raises(OtpRails::Escalation) { sup.run }
+      assert_raises(Odoshi::Escalation) { sup.run }
       exit_codes = events.select { |e| e[:event].last == :exit && e[:metadata][:id] == :bad }
                          .map { |e| e[:measurements][:exit_code] }.uniq
       assert_equal [127], exit_codes, "an unspawnable cmd must surface as exit 127, not a raised exception"

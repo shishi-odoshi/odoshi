@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # DESIGN §3.2
   class ChildSpec
     RESTART_KINDS = %i[permanent transient temporary].freeze

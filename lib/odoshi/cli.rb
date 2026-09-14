@@ -1,10 +1,10 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   module CLI
     USAGE = <<~TXT
-      usage: otp-rails run   [config/supervisor.rb]   # start the tree, block until shutdown
-             otp-rails check [config/supervisor.rb]   # validate config, print the tree
-             otp-rails version
+      usage: odoshi run   [config/supervisor.rb]   # start the tree, block until shutdown
+             odoshi check [config/supervisor.rb]   # validate config, print the tree
+             odoshi version
     TXT
 
     def self.run(argv)
@@ -25,9 +25,9 @@ module OtpRails
       else $stderr.puts USAGE; 1
       end
     rescue Escalation => e
-      $stderr.puts "otp-rails: #{e.message}"; 70 # EX_SOFTWARE — the platform is the final supervisor
+      $stderr.puts "odoshi: #{e.message}"; 70 # EX_SOFTWARE — the platform is the final supervisor
     rescue ConfigError, Errno::ENOENT => e
-      $stderr.puts "otp-rails: #{e.message}"; 78 # EX_CONFIG
+      $stderr.puts "odoshi: #{e.message}"; 78 # EX_CONFIG
     end
   end
 end

@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 require "json"
 
-module OtpRails
+module Odoshi
   # Minimal event bus. Event names mirror Elixir :telemetry (DESIGN §6):
-  #   event: [:otp_rails, :child, :restart], measurements: {...}, metadata: {...}
+  #   event: [:odoshi, :child, :restart], measurements: {...}, metadata: {...}
   # A railtie will bridge these into ActiveSupport::Notifications inside children.
   module Telemetry
     EVENTS = %i[
@@ -31,7 +31,7 @@ module OtpRails
       # name: Symbol like :"child.restart" (flat in Ruby; split on "." for the Elixir side)
       def emit(name, measurements = {}, metadata = {})
         raise ArgumentError, "unknown event #{name}" unless EVENTS.include?(name)
-        event = { event: [:otp_rails, *name.to_s.split(".").map(&:to_sym)],
+        event = { event: [:odoshi, *name.to_s.split(".").map(&:to_sym)],
                   measurements: measurements, metadata: metadata,
                   ts: Process.clock_gettime(Process::CLOCK_REALTIME) }
         subs = @mutex.synchronize { @subscribers.dup }
@@ -42,7 +42,7 @@ module OtpRails
           # supervisor loop and monitor threads, and other subscribers (the
           # Elixir sidecar exporter, the resilience bridge) must keep
           # receiving events even when one subscriber raises (resilience#1).
-          warn "[otp-rails] telemetry subscriber raised: #{e.class}: #{e.message}"
+          warn "[odoshi] telemetry subscriber raised: #{e.class}: #{e.message}"
         end
         event
       end
@@ -52,7 +52,7 @@ module OtpRails
     module Subscribers
       def self.logger(io = $stderr)
         Telemetry.subscribe do |e|
-          io.puts("[otp-rails] #{e[:event].join('.')} #{e[:metadata].inspect} #{e[:measurements].inspect}")
+          io.puts("[odoshi] #{e[:event].join('.')} #{e[:metadata].inspect} #{e[:measurements].inspect}")
         end
       end
 

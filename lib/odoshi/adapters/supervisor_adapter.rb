@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   module Adapters
     # DESIGN §3.1 nested supervisors. A subtree is just another child of the
     # parent: this pseudo-adapter runs a child Supervisor on a Thread and maps
@@ -9,7 +9,7 @@ module OtpRails
     # (restart the whole subtree, etc.), exactly per OTP semantics.
     #
     # opts:
-    #   builder: a Proc returning a FRESH OtpRails::Supervisor each call.
+    #   builder: a Proc returning a FRESH Odoshi::Supervisor each call.
     #            A restarted subtree must not inherit the old subtree's
     #            RestartIntensity window (it is stateful), so spawn re-invokes
     #            the builder on every (re)start instead of reusing an instance.
@@ -27,7 +27,7 @@ module OtpRails
           raise ConfigError, "#{spec.id}: :supervisor adapter requires builder: (a proc returning a fresh Supervisor)"
         end
         sub = builder.call
-        raise ConfigError, "#{spec.id}: builder must return an OtpRails::Supervisor" unless sub.is_a?(Supervisor)
+        raise ConfigError, "#{spec.id}: builder must return an Odoshi::Supervisor" unless sub.is_a?(Supervisor)
         thread = Thread.new { sub.run }
         # Escalation out of a subtree is an expected, handled exit path — the
         # waiter converts it into a crashed status. Don't let Ruby dump it.

@@ -54,19 +54,19 @@ class PumaAdapterTest < Minitest::Test
   end
 
   def test_no_port_anywhere_raises_config_error_before_spawning
-    spec = OtpRails::ChildSpec.new(id: :web, adapter: :puma,
+    spec = Odoshi::ChildSpec.new(id: :web, adapter: :puma,
                                    opts: { config: "#{RACK_APP}/puma.rb" }) # env-var port, no literal line
-    err = assert_raises(OtpRails::ConfigError) { OtpRails::Adapter.lookup(:puma).new.spawn(spec) }
+    err = assert_raises(Odoshi::ConfigError) { Odoshi::Adapter.lookup(:puma).new.spawn(spec) }
     assert_match(/port/, err.message)
   end
 
   private
 
   def build_sup(**opts)
-    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 5, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :none))
-    sup.add_child(OtpRails::ChildSpec.new(
+    sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 5, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none))
+    sup.add_child(Odoshi::ChildSpec.new(
                     id: :web, adapter: :puma, shutdown: 10, start_timeout: WAIT,
                     opts: { spawn_opts: { out: File::NULL, err: File::NULL } }.merge(opts)
                   ))
