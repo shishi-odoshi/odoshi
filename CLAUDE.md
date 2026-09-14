@@ -1,12 +1,12 @@
-# CLAUDE.md — otp-rails
+# CLAUDE.md — odoshi
 
-You are building `otp-rails`, a slim OTP-style process supervisor for Rails apps, under the
+You are building `odoshi`, a slim OTP-style process supervisor for Rails apps, under the
 `shishi-odoshi` GitHub org. Read `docs/DESIGN.md` before any change; it is the source of truth.
 `docs/PLAN.md` is the ordered backlog with acceptance criteria — work it top to bottom.
 
 ## Hard rules (from DESIGN §9 — do not relitigate)
 
-1. **Nothing under `lib/otp_rails/` may require Rails, ActiveSupport, ActiveRecord, or any gem.**
+1. **Nothing under `lib/odoshi/` may require Rails, ActiveSupport, ActiveRecord, or any gem.**
    The supervisor has zero runtime dependencies. If you think a dependency is needed, stop and
    write it up in `docs/PLAN.md` under "Open questions" instead of adding it.
 2. The adapter interface is exactly `spawn / link / health / drain` (+ `kill` as last resort).
@@ -36,12 +36,12 @@ You are building `otp-rails`, a slim OTP-style process supervisor for Rails apps
 ## Repo map
 
 ```
-exe/otp-rails                 CLI: run | check | version
-lib/otp_rails/supervisor.rb   the loop: start, link, exit handling, strategy, intensity, backoff
-lib/otp_rails/adapter.rb      the 4-method interface + registry
-lib/otp_rails/adapters/       one file per adapter
-lib/otp_rails/dsl.rb          config/supervisor.rb loader
-lib/otp_rails/telemetry.rb    event bus + default subscribers
+exe/odoshi                 CLI: run | check | version
+lib/odoshi/supervisor.rb   the loop: start, link, exit handling, strategy, intensity, backoff
+lib/odoshi/adapter.rb      the 4-method interface + registry
+lib/odoshi/adapters/       one file per adapter
+lib/odoshi/dsl.rb          config/supervisor.rb loader
+lib/odoshi/telemetry.rb    event bus + default subscribers
 test/supervisor_kill_test.rb  chaos tests (real processes)
 docs/DESIGN.md                frozen design; decision log at bottom
 docs/PLAN.md                  ordered backlog with acceptance criteria
@@ -52,6 +52,6 @@ docs/PLAN.md                  ordered backlog with acceptance criteria
 ```
 rake test                                    # all tests
 ruby -Ilib -Itest test/supervisor_kill_test.rb
-exe/otp-rails check examples/supervisor.rb   # print a tree
-exe/otp-rails run examples/supervisor.rb     # supervise (Ctrl-C to stop)
+exe/odoshi check examples/supervisor.rb   # print a tree
+exe/odoshi run examples/supervisor.rb     # supervise (Ctrl-C to stop)
 ```
