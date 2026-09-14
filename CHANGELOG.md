@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.1 — 2026-09-14
+
+Two fixes from odoshi-bench findings:
+- **Puma plugin heartbeat no longer masks a wedged app (#49).** Under §5 active-first
+  health a "healthy" heartbeat out-votes a failing probe; the plugin's stats-only
+  heartbeat therefore silently disabled wedge detection on any :puma child running it.
+  The plugin now reports the WORSE of worker topology and a /up probe on the first tcp
+  bind (`ODOSHI_HEALTH_URL` overrides; unix-only binds fall back to topology-only), and
+  `meta` gains `up: true/false`.
+- **Immediate first restart for `:exponential` backoff (odoshi-template#1).** OTP
+  convention: a one-off crash costs no delay — the ladder starts at `base` from the
+  second consecutive attempt (crash-loops stay bounded by intensity, and a healthy
+  interval resets attempts). Benchmarked recovery drops by ~1s under the default config.
+
 ## v0.3.0 — 2026-09-13 — RENAMED: otp-rails → odoshi
 
 The gem is now **odoshi** (威し — the active half of [shishi-odoshi](https://github.com/shishi-odoshi),
