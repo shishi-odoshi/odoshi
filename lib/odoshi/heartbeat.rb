@@ -3,20 +3,20 @@ require "socket"
 require "json"
 
 # Deliberately self-contained (PLAN 1.6): any child process can
-#   require "otp_rails/heartbeat"
+#   require "odoshi/heartbeat"
 # without loading the rest of the gem — e.g. from a Rails initializer or a
 # Solid Queue hook — and never Rails itself (hard rule 1 / DESIGN §9).
-module OtpRails
+module Odoshi
   # Sends DESIGN §5 NDJSON heartbeats to the supervising socket:
   #
-  #   beat = OtpRails::Heartbeat.start(id: "jobs")   # => Heartbeat or nil
+  #   beat = Odoshi::Heartbeat.start(id: "jobs")   # => Heartbeat or nil
   #   beat&.stop
   #
-  #   OtpRails::Heartbeat.start(id: "jobs", interval: 2,
+  #   Odoshi::Heartbeat.start(id: "jobs", interval: 2,
   #                             state: -> { queue_backlog_ok? ? "healthy" : "degraded" },
   #                             meta:  -> { { backlog: backlog_size } })
   #
-  # Silently a no-op (returns nil) when OTP_RAILS_SOCK / OTP_RAILS_TOKEN are
+  # Silently a no-op (returns nil) when ODOSHI_SOCK / ODOSHI_TOKEN are
   # absent — the child is running unsupervised and that must not be an error.
   #
   # The beating thread is unkillable by bad input (issue #26): a raising
@@ -34,7 +34,7 @@ module OtpRails
 
     def initialize(id:, interval: 2, state: -> { "healthy" }, meta: -> { {} })
       @id, @interval, @state, @meta = id.to_s, interval, state, meta
-      @sock_path, @token = ENV["OTP_RAILS_SOCK"], ENV["OTP_RAILS_TOKEN"]
+      @sock_path, @token = ENV["ODOSHI_SOCK"], ENV["ODOSHI_TOKEN"]
       @last_state = "healthy"
     end
 

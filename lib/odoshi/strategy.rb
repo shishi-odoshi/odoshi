@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # DESIGN §3.3. Given the ordered child ids and the failed id,
   # return the ordered ids that must be stopped and restarted.
   module Strategy

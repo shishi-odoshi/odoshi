@@ -109,8 +109,8 @@ class SocketTest < Minitest::Test
   # passively instead.
   def test_heartbeat_for_nil_interval_child_does_not_crash_the_tree
     Dir.mktmpdir do |dir|
-      sup = OtpRails::Supervisor.new(socket_path: File.join(dir, "s.sock"))
-      sup.add_child(OtpRails::ChildSpec.new(id: :quiet, adapter: :command, shutdown: 2,
+      sup = Odoshi::Supervisor.new(socket_path: File.join(dir, "s.sock"))
+      sup.add_child(Odoshi::ChildSpec.new(id: :quiet, adapter: :command, shutdown: 2,
                                             health_interval: nil, opts: { cmd: "sleep 30" }))
       capture_events do |events|
         t = Thread.new { sup.run }
@@ -131,19 +131,19 @@ class SocketTest < Minitest::Test
   # Issue #31: an unusable socket path is a config problem (exit 78), not a
   # raw ArgumentError stacktrace.
   def test_unusable_socket_path_raises_config_error
-    sup = OtpRails::Supervisor.new(socket_path: "/tmp/#{"x" * 300}/s.sock")
-    sup.add_child(OtpRails::ChildSpec.new(id: :a, adapter: :command, opts: { cmd: "sleep 1" }))
-    assert_raises(OtpRails::ConfigError) { sup.run }
+    sup = Odoshi::Supervisor.new(socket_path: "/tmp/#{"x" * 300}/s.sock")
+    sup.add_child(Odoshi::ChildSpec.new(id: :a, adapter: :command, opts: { cmd: "sleep 1" }))
+    assert_raises(Odoshi::ConfigError) { sup.run }
   end
 
   private
 
   def with_sup(dir, cmd:)
-    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 10, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :none),
+    sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 10, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none),
                                    socket_path: File.join(dir, "s.sock"))
-    sup.add_child(OtpRails::ChildSpec.new(id: :hb, adapter: :command, shutdown: 2, start_timeout: 10,
+    sup.add_child(Odoshi::ChildSpec.new(id: :hb, adapter: :command, shutdown: 2, start_timeout: 10,
                                           health_interval: 0.2, opts: { cmd: cmd }))
     capture_events do |events|
       t = Thread.new { sup.run }

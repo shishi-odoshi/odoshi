@@ -12,7 +12,7 @@ class NestedSupervisorTest < Minitest::Test
   FIXTURES = File.expand_path("fixtures", __dir__)
 
   def test_subtree_children_start_and_appear_in_telemetry
-    sup = OtpRails.supervise do
+    sup = Odoshi.supervise do
       socket nil
       child :top, adapter: :command, cmd: "sleep 30", shutdown: 2
       supervisor :background, shutdown: 10 do
@@ -41,7 +41,7 @@ class NestedSupervisorTest < Minitest::Test
     Dir.mktmpdir do |dir|
       counter = File.join(dir, "crashes")
       log = File.join(dir, "worker.log")
-      sup = OtpRails.supervise do
+      sup = Odoshi.supervise do
         socket nil
         backoff :none
         max_restarts 5, within: 60
@@ -68,7 +68,7 @@ class NestedSupervisorTest < Minitest::Test
         assert_equal 4, spawns(events, :crashy), "crashy: 2 runs per subtree generation"
         assert events.any? { |e| e[:event].last == :restart && e[:metadata][:id] == :background },
                "parent must emit child.restart for the subtree"
-        assert events.any? { |e| e[:event] == %i[otp_rails supervisor escalate] },
+        assert events.any? { |e| e[:event] == %i[odoshi supervisor escalate] },
                "the subtree must emit supervisor.escalate when its intensity is exceeded"
 
         # The escalated subtree must have drained its own children before the
@@ -91,7 +91,7 @@ class NestedSupervisorTest < Minitest::Test
   def test_parent_stop_drains_subtree_children_too
     Dir.mktmpdir do |dir|
       log = File.join(dir, "events.log")
-      sup = OtpRails.supervise do
+      sup = Odoshi.supervise do
         socket nil
         child :top, adapter: :command, shutdown: 5,
               cmd: "ruby #{FIXTURES}/term_logger.rb top #{log} 0.1"
@@ -123,7 +123,7 @@ class NestedSupervisorTest < Minitest::Test
   end
 
   def test_escalation_beyond_parent_intensity_raises_out_of_the_root
-    sup = OtpRails.supervise do
+    sup = Odoshi.supervise do
       socket nil
       backoff :none
       max_restarts 1, within: 60
@@ -134,7 +134,7 @@ class NestedSupervisorTest < Minitest::Test
       end
     end
     capture_events do |events|
-      assert_raises(OtpRails::Escalation) { sup.run }
+      assert_raises(Odoshi::Escalation) { sup.run }
       assert_equal 2, spawns(events, :background),
                    "parent should have restarted the subtree once before giving up"
     end

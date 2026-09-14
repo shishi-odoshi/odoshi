@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   class Backoff
     def initialize(kind: :exponential, base: 1.0, cap: 30.0)
       @kind, @base, @cap = kind, base.to_f, cap.to_f

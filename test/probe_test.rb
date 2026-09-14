@@ -29,13 +29,13 @@ class ProbeTest < Minitest::Test
 
   def test_start_timeout_drains_and_applies_strategy
     port = free_port # nothing ever listens on it
-    sup = OtpRails::Supervisor.new(strategy: :one_for_one,
-                                   intensity: OtpRails::RestartIntensity.new(max_restarts: 1, within: 60),
-                                   backoff: OtpRails::Backoff.new(kind: :none))
-    sup.add_child(OtpRails::ChildSpec.new(id: :mute, adapter: :command, shutdown: 2, start_timeout: 1,
+    sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 1, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none))
+    sup.add_child(Odoshi::ChildSpec.new(id: :mute, adapter: :command, shutdown: 2, start_timeout: 1,
                                           opts: { cmd: "sleep 30", probe: { tcp: port } }))
     capture_events do |events|
-      assert_raises(OtpRails::Escalation) { sup.run }
+      assert_raises(Odoshi::Escalation) { sup.run }
       drains = events.count { |e| e[:event].last == :drain && e[:metadata][:id] == :mute }
       assert_operator drains, :>=, 1, "start_timeout must drain the child"
       assert events.any? { |e| e[:event].last == :restart && e[:metadata][:id] == :mute },
@@ -48,8 +48,8 @@ class ProbeTest < Minitest::Test
   private
 
   def build_sup(cmd:, probe:)
-    sup = OtpRails::Supervisor.new
-    sup.add_child(OtpRails::ChildSpec.new(id: :probed, adapter: :command, shutdown: 2, start_timeout: 10,
+    sup = Odoshi::Supervisor.new
+    sup.add_child(Odoshi::ChildSpec.new(id: :probed, adapter: :command, shutdown: 2, start_timeout: 10,
                                           opts: { cmd: cmd, probe: probe }))
     sup
   end

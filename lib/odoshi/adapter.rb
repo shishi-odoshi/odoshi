@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # DESIGN §4. Exactly four operations (+ kill as last resort). Adapters never talk to each other.
   class Adapter
     REGISTRY = {}

@@ -8,7 +8,7 @@ require "json"
 
 sock = nil
 10.times do
-  sock = UNIXSocket.new(ENV.fetch("OTP_RAILS_SOCK"))
+  sock = UNIXSocket.new(ENV.fetch("ODOSHI_SOCK"))
   break
 rescue SystemCallError
   sleep 0.1

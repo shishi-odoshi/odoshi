@@ -3,7 +3,7 @@ require "socket"
 require "net/http"
 require "uri"
 
-module OtpRails
+module Odoshi
   # Passive probes (DESIGN §4.1/§5): a child declared with probe: opts is
   # :starting until the probe answers, then :healthy. Probes are adapter
   # plumbing behind health(), not part of the Adapter interface (hard rule 2).

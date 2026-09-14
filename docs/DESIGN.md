@@ -1,4 +1,4 @@
-# otp-rails — Phase 0 Design
+# odoshi — Phase 0 Design (né otp-rails; renamed 2026-09-13, see decision log)
 
 Status: draft v0.1 · Owner: Tim · Decision log at bottom
 
@@ -111,11 +111,11 @@ child reports:
   Message format is newline-delimited JSON:
 
 ```json
-{"id":"web","state":"healthy","ts":1757700000,"token":"<OTP_RAILS_TOKEN>","meta":{"workers":4,"backlog":0}}
+{"id":"web","state":"healthy","ts":1757700000,"token":"<ODOSHI_TOKEN>","meta":{"workers":4,"backlog":0}}
 ```
 
 Wire rules (each violated line is silently dropped, exactly like a bad token):
-- Every message carries `token` — the per-boot value from `OTP_RAILS_TOKEN`.
+- Every message carries `token` — the per-boot value from `ODOSHI_TOKEN`.
 - `token`, `id`, `state`, and `cmd` are JSON strings; non-string values are malformed.
 - A line is at most 64 KiB including the newline; longer is malformed (receivers drop
   the oversized line and resume at the next newline, memory stays bounded).
@@ -132,20 +132,20 @@ This JSON protocol is the contract the `beam` repo consumes. Keep it boring.
 
 ## 6. Telemetry
 
-Event names follow `[:otp_rails, :subject, :action]`, mirroring Elixir `:telemetry`
+Event names follow `[:odoshi, :subject, :action]`, mirroring Elixir `:telemetry`
 so the sidecar can forward them unchanged.
 
 ```
-[:otp_rails, :supervisor, :start]
-[:otp_rails, :supervisor, :stop]
-[:otp_rails, :supervisor, :escalate]       # intensity exceeded
-[:otp_rails, :child, :spawn]
-[:otp_rails, :child, :healthy]
-[:otp_rails, :child, :degraded]
-[:otp_rails, :child, :exit]                # measurements: {exit_code, uptime_ms}
-[:otp_rails, :child, :restart]             # metadata:     {attempt, backoff_ms, strategy}
-[:otp_rails, :child, :drain]
-[:otp_rails, :child, :kill]                # drain timed out
+[:odoshi, :supervisor, :start]
+[:odoshi, :supervisor, :stop]
+[:odoshi, :supervisor, :escalate]       # intensity exceeded
+[:odoshi, :child, :spawn]
+[:odoshi, :child, :healthy]
+[:odoshi, :child, :degraded]
+[:odoshi, :child, :exit]                # measurements: {exit_code, uptime_ms}
+[:odoshi, :child, :restart]             # metadata:     {attempt, backoff_ms, strategy}
+[:odoshi, :child, :drain]
+[:odoshi, :child, :kill]                # drain timed out
 ```
 
 Ruby API: `ActiveSupport::Notifications` under the hood; a `Rails.supervisor.subscribe`
@@ -224,3 +224,9 @@ None blocking Phase 1.
   code changes. Auth v1 = Turbo signed stream names verified with the shared Rails
   secret. Native Phoenix channel semantics deferred; the implementation may serve the
   protocol with a minimal Elixir websocket stack rather than full Phoenix.
+- 2026-09-13 — RENAMED: `otp-rails` → `odoshi` (威し, the active half of shishi-odoshi;
+  Tim's call). Motivation: "otp" reads as one-time password in Rubyland, colliding with
+  rotp/devise-otp/etc. Everything renames: gem `odoshi` (0.3.0), module `Odoshi`, CLI
+  `odoshi`, env `ODOSHI_SOCK`/`ODOSHI_TOKEN`/`ODOSHI_CHILD_ID`/…, telemetry `[:odoshi, …]`,
+  socket default `tmp/odoshi.sock`, ecosystem gems `odoshi-resilience` etc.; the `beam`
+  repo mirrors the env/telemetry names. Historical log entries above keep the old names.

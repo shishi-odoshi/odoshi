@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # OTP restart intensity: more than `max_restarts` within `within` seconds => escalate.
   class RestartIntensity
     attr_reader :max_restarts, :within

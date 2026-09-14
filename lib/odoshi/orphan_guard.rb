@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   # PLAN 1.1 orphan prevention: if the supervisor is SIGKILLed, children should
   # still receive SIGTERM. Linux delivers this via prctl(PR_SET_PDEATHSIG),
   # armed in the forked child between fork and exec. macOS/BSD have no

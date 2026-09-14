@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.0 — 2026-09-13 — RENAMED: otp-rails → odoshi
+
+The gem is now **odoshi** (威し — the active half of [shishi-odoshi](https://github.com/shishi-odoshi),
+the self-resetting bamboo fountain). "otp" reads as one-time password in Rubyland; this
+project's OTP was always the Erlang kind. Everything renames — **breaking across the board**:
+
+| was | is |
+|---|---|
+| `gem "otp-rails"` | `gem "odoshi"` |
+| `OtpRails::` / `require "otp_rails/…"` | `Odoshi::` / `require "odoshi/…"` |
+| `otp-rails run` (CLI) | `odoshi run` |
+| `OTP_RAILS_SOCK` / `_TOKEN` / `_CHILD_ID` / `_HEARTBEAT_INTERVAL` | `ODOSHI_SOCK` / `_TOKEN` / `_CHILD_ID` / `_HEARTBEAT_INTERVAL` |
+| telemetry `[:otp_rails, …]` | `[:odoshi, …]` |
+| `plugin :otp_rails` (puma) | `plugin :odoshi` |
+| socket default `tmp/otp-rails.sock` | `tmp/odoshi.sock` |
+
+The Elixir sidecar mirrors the env and telemetry names. Old versions remain published
+under `otp-rails` (0.2.1 is a pointer release); no compatibility shims — rename atomically.
+
+Also in this release:
+- Telemetry subscribers are isolated — one raising subscriber can't break the bus or
+  reach the supervisor loop (QA round 2).
+
 ## v0.2.0 — 2026-09-13
 
 **Puma plugin (DESIGN §4.2 step 2)** — `plugin :otp_rails` in `config/puma.rb`: the master

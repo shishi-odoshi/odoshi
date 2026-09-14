@@ -1,4 +1,4 @@
-# otp-rails
+# odoshi
 
 OTP-style supervision trees for the processes of a Rails app. A slim supervisor — it never
 loads Rails — that starts, links, health-checks, and restarts `web`, `jobs`, `cable`, `cron`
@@ -13,13 +13,13 @@ The Elixir sidecar speaking the same wire protocol lives at
 ```ruby
 # Gemfile — the supervisor is its own process; a :supervisor group keeps app boot slim
 group :supervisor do
-  gem "otp-rails"
+  gem "odoshi"
 end
 ```
 
 ```
 $ bundle install
-$ otp-rails version
+$ odoshi version
 ```
 
 Zero runtime dependencies. Ruby >= 3.2.
@@ -38,8 +38,8 @@ child :cron, adapter: :command, cmd: "bin/rails cron", restart: :transient
 ```
 
 ```
-$ otp-rails check config/supervisor.rb   # validate config, print the tree
-$ otp-rails run   config/supervisor.rb   # supervise (Ctrl-C drains and stops)
+$ odoshi check config/supervisor.rb   # validate config, print the tree
+$ odoshi run   config/supervisor.rb   # supervise (Ctrl-C drains and stops)
 ```
 
 ## Config reference
@@ -51,7 +51,7 @@ Top-level directives in `config/supervisor.rb`:
 | `strategy KIND` | `:one_for_one` | `:one_for_one` restarts only the failed child; `:rest_for_one` also restarts children declared after it; `:one_for_all` restarts every child |
 | `max_restarts N, within: S` | `5, within: 60` | Sliding-window restart intensity; exceeding it escalates (exit 70) |
 | `backoff KIND, **opts` | `:exponential, base: 1, cap: 30` | `:none`, `:constant`, or `:exponential` delay between restarts |
-| `socket PATH` | `"tmp/otp-rails.sock"` | Heartbeat/control Unix socket; `socket nil` disables it |
+| `socket PATH` | `"tmp/odoshi.sock"` | Heartbeat/control Unix socket; `socket nil` disables it |
 | `child ID, adapter:, **opts` | — | Declares a child; declaration order is start order |
 | `supervisor ID do ... end` | — | Nested subtree with its own strategy/intensity/backoff; subtree escalation is an ordinary child exit in the parent |
 
@@ -80,19 +80,19 @@ For worker-level visibility on a cluster-mode `:puma` child, add the plugin to
 `config/puma.rb`:
 
 ```ruby
-plugin :otp_rails
+plugin :odoshi
 ```
 
 The master then heartbeats worker state over the socket: any missing worker is reported
-`"degraded"` (⇒ `[:otp_rails, :child, :degraded]` telemetry, `meta: {workers:, booted:,
+`"degraded"` (⇒ `[:odoshi, :child, :degraded]` telemetry, `meta: {workers:, booted:,
 phase:}`) while puma replaces the worker itself — visibility only, no lifecycle change.
-Both adapters export `OTP_RAILS_CHILD_ID` so plugins and hooks heartbeat under the right id.
+Both adapters export `ODOSHI_CHILD_ID` so plugins and hooks heartbeat under the right id.
 
 ## Health & heartbeats
 
 Passive children are probed (PID, TCP, HTTP). Active children report themselves: the
-supervisor listens on a Unix socket (mode 0600) and exports `OTP_RAILS_SOCK` /
-`OTP_RAILS_TOKEN` to every child. Heartbeats are newline-delimited JSON:
+supervisor listens on a Unix socket (mode 0600) and exports `ODOSHI_SOCK` /
+`ODOSHI_TOKEN` to every child. Heartbeats are newline-delimited JSON:
 
 ```json
 {"id":"jobs","state":"healthy","ts":1757700000,"token":"…","meta":{"backlog":0}}
@@ -107,29 +107,29 @@ lines over 64 KiB ⇒ silently dropped. The same socket accepts
 From any child process (a Rails initializer, a Solid Queue hook — no Rails required):
 
 ```ruby
-require "otp_rails/heartbeat"   # loads nothing else
-OtpRails::Heartbeat.start(id: "jobs")  # no-op when running unsupervised
+require "odoshi/heartbeat"   # loads nothing else
+Odoshi::Heartbeat.start(id: "jobs")  # no-op when running unsupervised
 ```
 
 ## Telemetry reference
 
-Event names follow `[:otp_rails, :subject, :action]`, mirroring Elixir `:telemetry` so the
+Event names follow `[:odoshi, :subject, :action]`, mirroring Elixir `:telemetry` so the
 sidecar can forward them unchanged. This list is a published contract:
 
 ```
-[:otp_rails, :supervisor, :start]     metadata: {strategy, children}
-[:otp_rails, :supervisor, :stop]
-[:otp_rails, :supervisor, :escalate]  measurements: {restarts}  metadata: {within}
-[:otp_rails, :child, :spawn]          metadata: {id, adapter, pid}
-[:otp_rails, :child, :healthy]        metadata: {id}
-[:otp_rails, :child, :degraded]       measurements: {consecutive}  metadata: {id}
-[:otp_rails, :child, :exit]           measurements: {exit_code, uptime_ms}  metadata: {id}
-[:otp_rails, :child, :restart]        measurements: {backoff_ms}  metadata: {id, attempt, strategy}
-[:otp_rails, :child, :drain]          metadata: {id}
-[:otp_rails, :child, :kill]           metadata: {id}  (drain timed out)
+[:odoshi, :supervisor, :start]     metadata: {strategy, children}
+[:odoshi, :supervisor, :stop]
+[:odoshi, :supervisor, :escalate]  measurements: {restarts}  metadata: {within}
+[:odoshi, :child, :spawn]          metadata: {id, adapter, pid}
+[:odoshi, :child, :healthy]        metadata: {id}
+[:odoshi, :child, :degraded]       measurements: {consecutive}  metadata: {id}
+[:odoshi, :child, :exit]           measurements: {exit_code, uptime_ms}  metadata: {id}
+[:odoshi, :child, :restart]        measurements: {backoff_ms}  metadata: {id, attempt, strategy}
+[:odoshi, :child, :drain]          metadata: {id}
+[:odoshi, :child, :kill]           metadata: {id}  (drain timed out)
 ```
 
-Subscribe in-process with `OtpRails::Telemetry.subscribe { |event| ... }`; a logger
+Subscribe in-process with `Odoshi::Telemetry.subscribe { |event| ... }`; a logger
 subscriber and a JSON-lines exporter ship by default (`Telemetry::Subscribers`).
 
 ## Exit codes
@@ -162,7 +162,7 @@ subscriber and a JSON-lines exporter ship by default (`Telemetry::Subscribers`).
 ```
 bundle exec rake test                        # full suite (real processes, no mocks)
 ruby -Ilib -Itest test/supervisor_kill_test.rb
-exe/otp-rails check examples/supervisor.rb
+exe/odoshi check examples/supervisor.rb
 ```
 
 `docs/PLAN.md` is the backlog; `docs/DESIGN.md` is the frozen design.

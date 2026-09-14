@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-module OtpRails
+module Odoshi
   module Adapters
     # DESIGN §4.1 / §4.2 step 1 — :puma in "beside" mode: one opaque child
     # wrapping the puma master. Health = HTTP probe of /up (the Rails 7.1+
@@ -37,9 +37,9 @@ module OtpRails
           opts: spec.opts.merge(
             cmd: "bundle exec puma -C #{config}",
             probe: { http: "http://127.0.0.1:#{port}#{HEALTH_PATH}" },
-            # Tag the child so the otp_rails puma plugin (and any app hook)
+            # Tag the child so the odoshi puma plugin (and any app hook)
             # heartbeats under the right id; explicit env still wins.
-            env: { "OTP_RAILS_CHILD_ID" => spec.id.to_s }.merge(spec.opts.fetch(:env, {}))
+            env: { "ODOSHI_CHILD_ID" => spec.id.to_s }.merge(spec.opts.fetch(:env, {}))
           )
         )
       end
