@@ -50,7 +50,7 @@ Top-level directives in `config/supervisor.rb`:
 |---|---|---|
 | `strategy KIND` | `:one_for_one` | `:one_for_one` restarts only the failed child; `:rest_for_one` also restarts children declared after it; `:one_for_all` restarts every child |
 | `max_restarts N, within: S` | `5, within: 60` | Sliding-window restart intensity; exceeding it escalates (exit 70) |
-| `backoff KIND, **opts` | `:exponential, base: 1, cap: 30` | `:none`, `:constant`, or `:exponential` delay between restarts |
+| `backoff KIND, **opts` | `:exponential, base: 1, cap: 30` | `:none`, `:constant`, or `:exponential` delay between restarts. `:exponential`'s FIRST restart is immediate (OTP convention); the ladder starts at `base` from the second consecutive attempt |
 | `socket PATH` | `"tmp/odoshi.sock"` | Heartbeat/control Unix socket; `socket nil` disables it |
 | `child ID, adapter:, **opts` | — | Declares a child; declaration order is start order |
 | `supervisor ID do ... end` | — | Nested subtree with its own strategy/intensity/backoff; subtree escalation is an ordinary child exit in the parent |

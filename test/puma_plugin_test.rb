@@ -3,6 +3,7 @@ require "test_helper"
 require "net/http"
 require "socket"
 require "tmpdir"
+require "fileutils"
 
 # PLAN 2.5 — puma plugin: the master heartbeats worker-level state over the
 # §5 socket. A missing worker ⇒ reported "degraded" ⇒ [:odoshi, :child,
@@ -29,6 +30,44 @@ class PumaPluginTest < Minitest::Test
              "puma should replace its own worker and report healthy again"
       assert_equal 1, spawns(events, :web),
              "worker loss is visibility only — the supervisor must not respawn the child"
+    end
+  end
+
+  # Issue #49: the plugin's heartbeat must never vouch for an app whose /up
+  # is failing — under §5 active-first health, a "healthy" heartbeat would
+  # out-vote the probe and silently disable wedge detection. The plugin now
+  # reports the WORSE of worker topology and /up, so the wedge surfaces as
+  # degraded heartbeats and degraded_restart_after replaces the child.
+  def test_wedged_app_is_not_masked_by_the_plugin_heartbeat
+    Dir.mktmpdir do |dir|
+      flag = File.join(dir, "wedge.flag")
+      port = free_port
+      sup = Odoshi::Supervisor.new(strategy: :one_for_one,
+                                   intensity: Odoshi::RestartIntensity.new(max_restarts: 10, within: 60),
+                                   backoff: Odoshi::Backoff.new(kind: :none),
+                                   socket_path: File.join(dir, "s.sock"))
+      sup.add_child(Odoshi::ChildSpec.new(
+                      id: :web, adapter: :puma, shutdown: 5, start_timeout: WAIT,
+                      health_interval: 0.2, degraded_restart_after: 3,
+                      opts: { config: "#{RACK_APP}/puma_flaky_plugin.rb", port: port,
+                              env: { "PUMA_TEST_PORT" => port.to_s, "ODOSHI_HEARTBEAT_INTERVAL" => "0.1",
+                                     "WEDGE_FLAG" => flag } }
+                    ))
+      capture_events do |events|
+        t = Thread.new { sup.run }
+        assert wait_until(WAIT) { heartbeat_state(sup) == "healthy" }, "app should come up healthy"
+        FileUtils.touch(flag) # wedge: alive, heartbeating, /up now 503
+        # Hold the wedge until the degraded_restart_after threshold (3) is
+        # crossed — the third observation is what enqueues the replacement.
+        assert wait_until(WAIT) { degraded_count(events) >= 3 },
+               "the wedge must surface through the heartbeat, not be masked by it"
+        File.delete(flag) # let the replacement boot healthy
+        assert wait_until(WAIT) { spawns(events, :web) >= 2 },
+               "degraded_restart_after must replace the wedged child"
+        assert wait_until(WAIT) { heartbeat_state(sup) == "healthy" }, "replacement should recover"
+        sup.stop
+        assert t.join(WAIT), "supervisor should stop cleanly"
+      end
     end
   end
 
