@@ -14,6 +14,7 @@ class PumaPluginTest < Minitest::Test
 
   RACK_APP = File.expand_path("fixtures/rack_app", __dir__)
   WAIT = 30 # cluster boot forks two workers; generous, not load-bearing
+  REAP_WAIT = 90 # puma-master reap latency reached ~28s on starved macOS CI
 
   def test_missing_worker_reports_degraded_then_recovers_without_child_restart
     with_plugin_sup("puma_cluster.rb") do |sup, events|
@@ -22,24 +23,15 @@ class PumaPluginTest < Minitest::Test
 
       workers = worker_pids(sup.live_pid(:web))
       assert_equal 2, workers.size, "fixture runs two workers"
+      Process.kill("KILL", workers.first)
 
-      # Hold the missing-worker condition rather than betting on one window:
-      # keep killing a worker (bounded) until the mechanism observes it. A
-      # working beat→heartbeat→monitor chain must catch a persistent
-      # condition; a broken one still fails. (Single-window form flaked on
-      # starved macOS CI runners despite a 5s replacement boot.)
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + WAIT
-      while degraded_count(events) < 1 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
-        victim = worker_pids(sup.live_pid(:web)).first
-        begin
-          Process.kill("KILL", victim) if victim
-        rescue Errno::ESRCH
-          nil
-        end
-        sleep 0.5
-      end
-      assert_operator degraded_count(events), :>=, 1,
-                      "a missing worker must surface as child.degraded telemetry"
+      # One kill, then a LONG observation deadline: stats can't show a
+      # missing worker until puma's master reaps the corpse, and a starved
+      # macOS CI runner was observed taking ~28s to reap (locally it's
+      # instant). Once reaped, the 5s replacement boot gives the degraded
+      # window; the chain itself needs no luck — just patience.
+      assert wait_until(REAP_WAIT) { degraded_count(events) >= 1 },
+             "a missing worker must surface as child.degraded telemetry"
       assert wait_until(WAIT) { heartbeat_state(sup) == "healthy" },
              "puma should replace its own worker and report healthy again"
       assert_equal 1, spawns(events, :web),
