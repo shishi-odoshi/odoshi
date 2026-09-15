@@ -29,9 +29,22 @@ class PumaPluginTest < Minitest::Test
       # missing worker until puma's master reaps the corpse, and a starved
       # macOS CI runner was observed taking ~28s to reap (locally it's
       # instant). Once reaped, the 5s replacement boot gives the degraded
-      # window; the chain itself needs no luck — just patience.
-      assert wait_until(REAP_WAIT) { degraded_count(events) >= 1 },
-             "a missing worker must surface as child.degraded telemetry"
+      # window; the chain itself needs no luck — just patience. On failure,
+      # dump the chain state: which link is dead — plugin beats (states
+      # never leave healthy) or the supervisor monitor (degraded states
+      # recorded but no telemetry)?
+      states = []
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + REAP_WAIT
+      while degraded_count(events) < 1 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        states << sup.instance_variable_get(:@heartbeats).dig(:web, :state)
+        sleep 0.5
+      end
+      monitor = sup.instance_variable_get(:@live).dig(:web, :monitor)
+      assert_operator degraded_count(events), :>=, 1,
+                      "a missing worker must surface as child.degraded telemetry — " \
+                      "states_seen=#{states.uniq.inspect} monitor_alive=#{monitor&.alive?.inspect} " \
+                      "hb=#{sup.instance_variable_get(:@heartbeats)[:web].inspect} " \
+                      "events=#{events.map { |e| e[:event].last }.tally.inspect}"
       assert wait_until(WAIT) { heartbeat_state(sup) == "healthy" },
              "puma should replace its own worker and report healthy again"
       assert_equal 1, spawns(events, :web),
