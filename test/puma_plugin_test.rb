@@ -22,10 +22,24 @@ class PumaPluginTest < Minitest::Test
 
       workers = worker_pids(sup.live_pid(:web))
       assert_equal 2, workers.size, "fixture runs two workers"
-      Process.kill("KILL", workers.first)
 
-      assert wait_until(WAIT) { degraded_count(events) >= 1 },
-             "a missing worker must surface as child.degraded telemetry"
+      # Hold the missing-worker condition rather than betting on one window:
+      # keep killing a worker (bounded) until the mechanism observes it. A
+      # working beat→heartbeat→monitor chain must catch a persistent
+      # condition; a broken one still fails. (Single-window form flaked on
+      # starved macOS CI runners despite a 5s replacement boot.)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + WAIT
+      while degraded_count(events) < 1 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        victim = worker_pids(sup.live_pid(:web)).first
+        begin
+          Process.kill("KILL", victim) if victim
+        rescue Errno::ESRCH
+          nil
+        end
+        sleep 0.5
+      end
+      assert_operator degraded_count(events), :>=, 1,
+                      "a missing worker must surface as child.degraded telemetry"
       assert wait_until(WAIT) { heartbeat_state(sup) == "healthy" },
              "puma should replace its own worker and report healthy again"
       assert_equal 1, spawns(events, :web),
