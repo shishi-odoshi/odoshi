@@ -97,7 +97,10 @@ class PumaPluginTest < Minitest::Test
                                      # 3s worker boot ⇒ the missing-worker window is wide
                                      # enough to survive scheduling starvation on loaded
                                      # 2-vCPU CI runners (1s flaked there once).
-                                     "BOOT_DELAY" => "3.0" } }
+                                     # 5s replacement-worker boot: 3s flaked on loaded
+                                     # macOS CI runners once the 0.4.0 parallel tests
+                                     # joined the suite (window race, not a mechanism bug)
+                                     "BOOT_DELAY" => "5.0" } }
                     ))
       capture_events do |events|
         t = Thread.new { sup.run }
