@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.0 — 2026-09-15 — replicas + parallelism
+
+Concurrency round 1 (P1+P2 of the parallelization plan, Tim-approved):
+
+- **Replicas:** `child :jobs, adapter: :solid_queue, count: 4` (or `count: :cpus`) expands
+  into `jobs.1`…`jobs.4` — interchangeable peers occupying ONE declaration slot. Each
+  replica has its own heartbeat id (`ODOSHI_CHILD_ID` injected per instance), monitor, and
+  lifecycle. Semantics: a lost replica restarts alone — its peers kept the slot's service
+  up, so under `rest_for_one` dependents do NOT restart; an earlier slot's failure restarts
+  the whole group. `restart!` and the socket `{"cmd":"restart"}` accept the group name and
+  replace all members together.
+- **Parallel boot:** `one_for_one` trees start all children concurrently (no inter-slot
+  dependencies — boot in max, not Σ); ordered strategies boot slot-by-slot with replicas
+  within a slot starting together. Spawns stay on one thread (fork safety); only health
+  waits run concurrently.
+- **Parallel drain within slots:** replica groups drain together on shutdown and in
+  restart fan-outs; cross-slot shutdown order remains strictly reverse-serial (the 1.1
+  contract between slots is untouched).
+- Don't set `env: { "ODOSHI_CHILD_ID" => ... }` manually on a `count: > 1` child.
+
+
 ## v0.3.1 — 2026-09-14
 
 Two fixes from odoshi-bench findings:

@@ -45,9 +45,14 @@ module Odoshi
     def run
       Telemetry.emit(:"supervisor.start", {}, { strategy: strategy, children: ids })
       @socket&.start # before children, so they inherit ODOSHI_SOCK/_TOKEN
-      @children.each do |spec|
+      # P2: one_for_one trees have no inter-slot dependencies, so the whole
+      # tree boots concurrently; ordered strategies boot slot by slot
+      # (declaration order IS the dependency contract), replicas within a
+      # slot concurrently.
+      boot_batches = strategy == :one_for_one && @children.size > 1 ? [@children.dup] : slots.map { |s| s.map { |i| spec_for(i) } }
+      boot_batches.each do |batch|
         break if @stop_requested
-        start_child(spec)
+        start_batch(batch)
       end
       loop do
         msg = @queue.pop
@@ -73,11 +78,19 @@ module Odoshi
       @queue << { type: :stop }
     end
 
-    # Public remediation API (DESIGN §7). Over IPC in the real thing; direct call here.
+    # Public remediation API (DESIGN §7). Over IPC in the real thing; direct
+    # call here. Accepts a child id or a replica group name (P1) — a group
+    # drains all members together, then restarts them together.
     def restart!(id)
-      spec = spec_for(id)
-      stop_child(spec)
-      start_child(spec)
+      members = @children.select { |c| c.group == id }
+      if members.any?
+        stop_batch(members)
+        start_batch(members)
+      else
+        spec = spec_for(id)
+        stop_child(spec)
+        start_child(spec)
+      end
     end
 
     def ids = @children.map(&:id)
@@ -90,6 +103,12 @@ module Odoshi
     def spec_for(id) = @children.find { |c| c.id == id } || raise(ArgumentError, "no child #{id}")
 
     def start_child(spec)
+      generation = spawn_and_link(spec)
+      entry = @live[spec.id]
+      start_monitor(spec, generation) if wait_healthy(spec, entry[:adapter], entry[:handle]) == :healthy
+    end
+
+    def spawn_and_link(spec)
       @heartbeats.delete(spec.id) # a replaced child's heartbeats must not vouch for its successor
       adapter = Adapter.lookup(spec.adapter).new
       handle = adapter.spawn(spec)
@@ -100,7 +119,39 @@ module Odoshi
         @queue << { type: :exit, id: spec.id, generation: generation, status: status } unless @stopping
       end
       Telemetry.emit(:"child.spawn", {}, { id: spec.id, adapter: spec.adapter, pid: handle.respond_to?(:pid) ? handle.pid : nil })
-      start_monitor(spec, generation) if wait_healthy(spec, adapter, handle) == :healthy
+      generation
+    end
+
+    # P2: spawn/link happen serially on the caller's thread (fork safety —
+    # only ever fork from one thread at a time); only the health WAITS run
+    # concurrently, so a batch reaches :healthy in max, not Σ. Monitors start
+    # from the caller's thread after every wait resolves.
+    def start_batch(specs)
+      return if specs.empty?
+      return start_child(specs.first) if specs.size == 1
+      spawned = specs.map { |spec| [spec, spawn_and_link(spec)] }
+      spawned.map do |spec, generation|
+        entry = @live[spec.id]
+        Thread.new { [spec, generation, wait_healthy(spec, entry[:adapter], entry[:handle])] }
+      end.map(&:value).each do |spec, generation, health|
+        start_monitor(spec, generation) if health == :healthy
+      end
+    end
+
+    # P2: replicas drain together; cross-slot ordering stays strictly serial
+    # (the 1.1 shutdown contract — reverse start order — binds BETWEEN slots).
+    def stop_batch(specs)
+      return if specs.empty?
+      return stop_child(specs.first) if specs.size == 1
+      specs.map { |spec| Thread.new { stop_child(spec) } }.each(&:join)
+    end
+
+    # Ordered declaration slots (P1): a slot is a single child or a whole
+    # replica group. Order encodes dependency BETWEEN slots, never within one.
+    def slots
+      ordered = {}
+      @children.each { |c| (ordered[c.group || c.id] ||= []) << c.id }
+      ordered.values
     end
 
     # PLAN 1.3: per-child polling thread. :degraded emits telemetry only,
@@ -183,7 +234,7 @@ module Odoshi
     # ignored; the token was already checked at the socket layer.
     def handle_control(msg)
       return unless msg[:cmd] == "restart"
-      return unless @children.any? { |c| c.id == msg[:id] }
+      return unless @children.any? { |c| c.id == msg[:id] || c.group == msg[:id] }
       restart!(msg[:id])
     end
 
@@ -218,24 +269,29 @@ module Odoshi
         raise Escalation, "restart intensity exceeded (#{intensity.count} in #{intensity.within}s)"
       end
 
-      affected = Strategy.affected(strategy, ids, id)
+      affected = Strategy.affected(strategy, slots, id)
+      affected_slots = slots.map { |slot_ids| slot_ids & affected }.reject(&:empty?)
       # OTP semantics (#14): declaration order encodes dependency, so first
-      # terminate ALL affected children in reverse start order — a
-      # replacement :b must never boot while an old :c that depended on the
-      # dead :b is still running — then restart them in start order.
-      affected.reverse_each do |aid|
-        stop_child(spec_for(aid)) unless aid == id
+      # terminate ALL affected children in reverse slot order — a replacement
+      # :b must never boot while an old :c that depended on the dead :b is
+      # still running — then restart slot by slot in start order. Within a
+      # slot, replicas stop and start concurrently (P2): they are peers.
+      affected_slots.reverse_each do |slot_ids|
+        stop_batch(slot_ids.reject { |aid| aid == id }.map { |aid| spec_for(aid) })
       end
-      affected.each do |aid|
+      affected_slots.each do |slot_ids|
         break if @stop_requested # shutdown preempts the restart fan-out (#28)
-        entry = @live[aid]
-        next unless entry # a temporary/clean-transient sibling is gone for good (#20)
-        attempts = (entry[:attempts] += 1)
-        delay = backoff.delay(attempts)
-        Telemetry.emit(:"child.restart", { backoff_ms: (delay * 1000).round }, { id: aid, attempt: attempts, strategy: strategy })
-        interruptible_sleep(delay)
+        present = slot_ids.select { |aid| @live[aid] } # pruned temporaries stay gone (#20)
+        next if present.empty?
+        delays = present.map do |aid|
+          attempts = (@live[aid][:attempts] += 1)
+          delay = backoff.delay(attempts)
+          Telemetry.emit(:"child.restart", { backoff_ms: (delay * 1000).round }, { id: aid, attempt: attempts, strategy: strategy })
+          delay
+        end
+        interruptible_sleep(delays.max)
         break if @stop_requested
-        start_child(spec_for(aid))
+        start_batch(present.map { |aid| spec_for(aid) })
       end
     end
 
@@ -260,7 +316,9 @@ module Odoshi
 
     def stop_all
       @stopping = true
-      @children.reverse_each { |spec| stop_child(spec) }
+      slots.reverse_each do |slot_ids|
+        stop_batch(slot_ids.map { |i| spec_for(i) }.select { |s| @live[s.id] })
+      end
     end
   end
 end
