@@ -195,7 +195,19 @@ module Odoshi
         return :stopping if @stop_requested # shutdown must not wait out start_timeout (#28)
         case effective_health(spec, adapter, handle)
         when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return :healthy
-        when :dead    then return :dead # the exit message arrives via link
+        when :dead
+          # Heartbeat aging can say :dead while the process lives — a starved
+          # beat thread lapsing >6 intervals during boot (seen on loaded CI:
+          # silent return here meant NO monitor and NO telemetry, ever). A
+          # stale boot heartbeat is no longer information: defer to the
+          # adapter's ground truth — real death returns (the exit arrives via
+          # link), an adapter-healthy child completes the boot, anything else
+          # keeps waiting. Post-boot aging stays the monitor's job — its
+          # :dead path drains first, so it is honest either way.
+          case adapter.health(handle)
+          when :dead    then return :dead
+          when :healthy then Telemetry.emit(:"child.healthy", {}, { id: spec.id }); return :healthy
+          end
         end
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           # PLAN 1.2: start_timeout exceeded ⇒ drain. The resulting exit flows
