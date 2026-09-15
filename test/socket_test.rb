@@ -128,6 +128,37 @@ class SocketTest < Minitest::Test
     end
   end
 
+  # A lone early heartbeat that goes stale during boot must not abort
+  # wait_healthy: heartbeat aging says :dead after 6 missed intervals (1.2s
+  # here — 0.3s with the tighter interval below), but the child is ALIVE and
+  # no exit will ever arrive via link. Pre-fix this silently skipped the
+  # monitor and all future telemetry for the child (found by macOS CI).
+  def test_stale_boot_heartbeat_does_not_abort_wait_healthy
+    Dir.mktmpdir do |dir|
+      port = free_port
+      sup = Odoshi::Supervisor.new(socket_path: File.join(dir, "s.sock"))
+      sup.add_child(Odoshi::ChildSpec.new(id: :hb, adapter: :command, shutdown: 2, start_timeout: 15,
+                                          health_interval: 0.05, # aging-dead at 0.3s of silence
+                                          opts: { cmd: "ruby #{FIXTURES}/tcp_server.rb #{port} 1.5",
+                                                  probe: { tcp: port } }))
+      capture_events do |events|
+        t = Thread.new { sup.run }
+        assert wait_until(10) { spawns(events, :hb) >= 1 }, "child should spawn"
+        # One "starting" beat, then silence: it ages to :dead ~0.3s later,
+        # while the child is mid-boot (its port opens at ~1.5s).
+        sock = UNIXSocket.new(File.join(dir, "s.sock"))
+        sock.puts({ id: "hb", state: "starting", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json)
+        assert wait_until(15) { events.any? { |e| e[:event].last == :healthy && e[:metadata][:id] == :hb } },
+               "boot must survive a stale heartbeat and reach :healthy when the probe answers"
+        assert sup.instance_variable_get(:@live).dig(:hb, :monitor)&.alive?,
+               "the monitor must start — pre-fix it was silently skipped"
+        sock.close
+        sup.stop
+        assert t.join(10)
+      end
+    end
+  end
+
   # Issue #31: an unusable socket path is a config problem (exit 78), not a
   # raw ArgumentError stacktrace.
   def test_unusable_socket_path_raises_config_error
@@ -160,6 +191,13 @@ class SocketTest < Minitest::Test
 
   def degraded(events)
     events.select { |e| e[:event].last == :degraded && e[:metadata][:id] == :hb }
+  end
+
+  def free_port
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    server.close
+    port
   end
 
   def wait_until(timeout)
