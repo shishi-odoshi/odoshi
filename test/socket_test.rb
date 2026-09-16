@@ -150,12 +150,14 @@ class SocketTest < Minitest::Test
         sock.puts({ id: "hb", state: "starting", ts: 0, token: sup.heartbeat_token, meta: {} }.to_json)
         assert wait_until(15) { events.any? { |e| e[:event].last == :healthy && e[:metadata][:id] == :hb } },
                "boot must survive a stale heartbeat and reach :healthy when the probe answers"
-        # Presence, not liveness: this monitor legitimately exits moments
-        # after starting (the still-stale beat ages to :dead post-boot, so it
-        # enqueues :health_dead and breaks — the honest path). Pre-fix the
-        # key was nil because start_monitor was never reached at all.
-        refute_nil sup.instance_variable_get(:@live).dig(:hb, :monitor),
-                   "the monitor must be started — pre-fix it was silently skipped"
+        # Assert the monitor's EFFECT, not the ivar: the monitor thread both
+        # starts and clears itself on the honest path (still-stale beat ages
+        # to :dead post-boot ⇒ :health_dead ⇒ stop_child, which nils the key),
+        # so any snapshot of @live is a race. A drain for :hb can only happen
+        # if start_monitor ran — pre-fix there was no monitor, no polling, and
+        # no telemetry for this child ever again.
+        assert wait_until(15) { events.any? { |e| e[:event].last == :drain && e[:metadata][:id] == :hb } },
+               "the monitor must run and act — pre-fix it was silently skipped"
         sock.close
         sup.stop
         assert t.join(10)
