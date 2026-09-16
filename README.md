@@ -33,9 +33,39 @@ max_restarts 5, within: 60
 backoff :exponential, base: 1, cap: 30
 
 child :web,  adapter: :puma, port: 3000
-child :jobs, adapter: :solid_queue, shutdown: 60
+child :jobs, adapter: :solid_queue, shutdown: 60, count: 4  # four interchangeable workers
 child :cron, adapter: :command, cmd: "bin/rails cron", restart: :transient
 ```
+
+## Replicas & parallelism
+
+`count: N` (or `count: :cpus`) turns one declaration into N interchangeable peers —
+`jobs.1`…`jobs.4` — each with its own process, heartbeat id, and health monitor:
+
+```
+$ odoshi check config/supervisor.rb
+strategy: rest_for_one
+  web (puma, permanent, shutdown=30s)
+  jobs.1 (solid_queue, permanent, shutdown=60s)
+  jobs.2 (solid_queue, permanent, shutdown=60s)
+  …
+```
+
+The group occupies **one declaration slot**, and that's what makes the semantics
+predictable:
+
+- A lost replica restarts **alone**. Its peers kept the slot's service up, so under
+  `rest_for_one` the children declared after it keep running — losing 1 of 4 workers is
+  not an outage.
+- A crash in an **earlier** slot restarts the whole group along with everything after it,
+  exactly as a single child would.
+- `Rails.supervisor.restart!(:jobs)` — or `{"cmd":"restart","id":"jobs"}` on the socket —
+  restarts every member together.
+
+Where declaration order carries no dependency, odoshi now works in parallel: `one_for_one`
+trees boot all children concurrently (boot time is the slowest child, not the sum), and
+replicas within a slot start and drain together. Ordered strategies keep their contract —
+slot N+1 doesn't spawn until slot N is healthy, and shutdown still walks slots in reverse.
 
 ```
 $ odoshi check config/supervisor.rb   # validate config, print the tree

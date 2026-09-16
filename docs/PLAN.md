@@ -227,3 +227,11 @@ Phase 4 complete — every line item of the Phase 0 plan has shipped.
 - Notes: caught mid-build — Strategy code contradicted the agreed semantics (restarted
   later slots on a replica crash); tests forced the decision explicit: a multi-member
   slot's service survives one replica, so only the replica restarts.
+- Surprise (latent bug, since 0.3.x): stabilising the cluster-degraded test on macOS CI
+  root-caused a real supervisor defect — heartbeat aging reported :dead for a LIVING child
+  whose beat thread lapsed 6 intervals during boot; wait_healthy believed it ("the exit
+  arrives via link" — never true for a living child) and skipped start_monitor, so that
+  child got no health polling or telemetry for its whole life. Fixed by deferring stale
+  boot beats to adapter ground truth. Lesson repeated from 1.1: when CI-only failures
+  resist three timing "fixes", stop widening windows and make the test dump the state of
+  the mechanism — the dump named the dead link in one run.

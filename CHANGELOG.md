@@ -20,6 +20,16 @@ Concurrency round 1 (P1+P2 of the parallelization plan, Tim-approved):
   contract between slots is untouched).
 - Don't set `env: { "ODOSHI_CHILD_ID" => ... }` manually on a `count: > 1` child.
 
+**Also fixed — a latent bug present since 0.3.x, surfaced while stabilising the above:**
+heartbeat freshness aging could report `:dead` for a child that was very much alive — a
+beat thread lapsing 6 intervals during boot (1.2s at the defaults) was enough. `wait_healthy`
+believed it, returned early on the assumption that "the exit arrives via link" (it never
+does for a living child), and thereby skipped starting the child's monitor: no health
+polling, no `child.degraded`, no telemetry for that child for the rest of its life. Stale
+boot heartbeats now defer to the adapter's ground truth — real death returns, an
+adapter-healthy child completes its boot, anything else keeps waiting. Post-boot aging is
+unchanged (the monitor drains first, so it stays honest).
+
 
 ## v0.3.1 — 2026-09-14
 
