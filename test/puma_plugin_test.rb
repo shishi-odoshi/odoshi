@@ -14,6 +14,7 @@ class PumaPluginTest < Minitest::Test
 
   RACK_APP = File.expand_path("fixtures/rack_app", __dir__)
   WAIT = 30 # cluster boot forks two workers; generous, not load-bearing
+  REAP_WAIT = 90 # puma-master reap latency reached ~28s on starved macOS CI
 
   def test_missing_worker_reports_degraded_then_recovers_without_child_restart
     with_plugin_sup("puma_cluster.rb") do |sup, events|
@@ -24,8 +25,26 @@ class PumaPluginTest < Minitest::Test
       assert_equal 2, workers.size, "fixture runs two workers"
       Process.kill("KILL", workers.first)
 
-      assert wait_until(WAIT) { degraded_count(events) >= 1 },
-             "a missing worker must surface as child.degraded telemetry"
+      # One kill, then a LONG observation deadline: stats can't show a
+      # missing worker until puma's master reaps the corpse, and a starved
+      # macOS CI runner was observed taking ~28s to reap (locally it's
+      # instant). Once reaped, the 5s replacement boot gives the degraded
+      # window; the chain itself needs no luck — just patience. On failure,
+      # dump the chain state: which link is dead — plugin beats (states
+      # never leave healthy) or the supervisor monitor (degraded states
+      # recorded but no telemetry)?
+      states = []
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + REAP_WAIT
+      while degraded_count(events) < 1 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        states << sup.instance_variable_get(:@heartbeats).dig(:web, :state)
+        sleep 0.5
+      end
+      monitor = sup.instance_variable_get(:@live).dig(:web, :monitor)
+      assert_operator degraded_count(events), :>=, 1,
+                      "a missing worker must surface as child.degraded telemetry — " \
+                      "states_seen=#{states.uniq.inspect} monitor_alive=#{monitor&.alive?.inspect} " \
+                      "hb=#{sup.instance_variable_get(:@heartbeats)[:web].inspect} " \
+                      "events=#{events.map { |e| e[:event].last }.tally.inspect}"
       assert wait_until(WAIT) { heartbeat_state(sup) == "healthy" },
              "puma should replace its own worker and report healthy again"
       assert_equal 1, spawns(events, :web),
@@ -97,7 +116,10 @@ class PumaPluginTest < Minitest::Test
                                      # 3s worker boot ⇒ the missing-worker window is wide
                                      # enough to survive scheduling starvation on loaded
                                      # 2-vCPU CI runners (1s flaked there once).
-                                     "BOOT_DELAY" => "3.0" } }
+                                     # 5s replacement-worker boot: 3s flaked on loaded
+                                     # macOS CI runners once the 0.4.0 parallel tests
+                                     # joined the suite (window race, not a mechanism bug)
+                                     "BOOT_DELAY" => "5.0" } }
                     ))
       capture_events do |events|
         t = Thread.new { sup.run }

@@ -214,3 +214,24 @@ Phase 4 complete — every line item of the Phase 0 plan has shipped.
   reparented orphans (Docker, bare containers). pdeathsig itself worked the whole time.
   Fixed by having the fixture child write a marker file from its TERM handler — assert
   signal delivery, not process disappearance.
+
+## 0.4.0 — Concurrency round 1 (P1+P2) — DONE 2026-09-15
+- [x] P1 replicas: `count:`/`count: :cpus` on child; derived ids; group-as-slot semantics
+      (replica crash absorbed by the group; earlier-slot crash restarts the group);
+      restart!/control restart by group name.
+- [x] P2 parallelism where ordering doesn't bind: one_for_one boots concurrently; replica
+      groups start/drain together in boot, stop_all, and fan-outs; spawns serialized on
+      one thread for fork safety; cross-slot drain order preserved (1.1 contract).
+- Deferred (Tim's queue): P3 runtime scale over the socket (§5 cmd addition — needs a
+  DESIGN §5 edit), P4 non-blocking start pipeline.
+- Notes: caught mid-build — Strategy code contradicted the agreed semantics (restarted
+  later slots on a replica crash); tests forced the decision explicit: a multi-member
+  slot's service survives one replica, so only the replica restarts.
+- Surprise (latent bug, since 0.3.x): stabilising the cluster-degraded test on macOS CI
+  root-caused a real supervisor defect — heartbeat aging reported :dead for a LIVING child
+  whose beat thread lapsed 6 intervals during boot; wait_healthy believed it ("the exit
+  arrives via link" — never true for a living child) and skipped start_monitor, so that
+  child got no health polling or telemetry for its whole life. Fixed by deferring stale
+  boot beats to adapter ground truth. Lesson repeated from 1.1: when CI-only failures
+  resist three timing "fixes", stop widening windows and make the test dump the state of
+  the mechanism — the dump named the dead link in one run.

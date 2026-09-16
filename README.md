@@ -33,9 +33,39 @@ max_restarts 5, within: 60
 backoff :exponential, base: 1, cap: 30
 
 child :web,  adapter: :puma, port: 3000
-child :jobs, adapter: :solid_queue, shutdown: 60
+child :jobs, adapter: :solid_queue, shutdown: 60, count: 4  # four interchangeable workers
 child :cron, adapter: :command, cmd: "bin/rails cron", restart: :transient
 ```
+
+## Replicas & parallelism
+
+`count: N` (or `count: :cpus`) turns one declaration into N interchangeable peers —
+`jobs.1`…`jobs.4` — each with its own process, heartbeat id, and health monitor:
+
+```
+$ odoshi check config/supervisor.rb
+strategy: rest_for_one
+  web (puma, permanent, shutdown=30s)
+  jobs.1 (solid_queue, permanent, shutdown=60s)
+  jobs.2 (solid_queue, permanent, shutdown=60s)
+  …
+```
+
+The group occupies **one declaration slot**, and that's what makes the semantics
+predictable:
+
+- A lost replica restarts **alone**. Its peers kept the slot's service up, so under
+  `rest_for_one` the children declared after it keep running — losing 1 of 4 workers is
+  not an outage.
+- A crash in an **earlier** slot restarts the whole group along with everything after it,
+  exactly as a single child would.
+- `Rails.supervisor.restart!(:jobs)` — or `{"cmd":"restart","id":"jobs"}` on the socket —
+  restarts every member together.
+
+Where declaration order carries no dependency, odoshi now works in parallel: `one_for_one`
+trees boot all children concurrently (boot time is the slowest child, not the sum), and
+replicas within a slot start and drain together. Ordered strategies keep their contract —
+slot N+1 doesn't spawn until slot N is healthy, and shutdown still walks slots in reverse.
 
 ```
 $ odoshi check config/supervisor.rb   # validate config, print the tree
@@ -52,7 +82,8 @@ Top-level directives in `config/supervisor.rb`:
 | `max_restarts N, within: S` | `5, within: 60` | Sliding-window restart intensity; exceeding it escalates (exit 70) |
 | `backoff KIND, **opts` | `:exponential, base: 1, cap: 30` | `:none`, `:constant`, or `:exponential` delay between restarts. `:exponential`'s FIRST restart is immediate (OTP convention); the ladder starts at `base` from the second consecutive attempt |
 | `socket PATH` | `"tmp/odoshi.sock"` | Heartbeat/control Unix socket; `socket nil` disables it |
-| `child ID, adapter:, **opts` | — | Declares a child; declaration order is start order |
+| `child ID, adapter:, **opts` | — | Declares a child; declaration order is start order between slots |
+| `child ID, ..., count: N` | `1` | Replicas: N interchangeable peers (`ID.1`…`ID.N`, or `count: :cpus`) in ONE declaration slot — a lost replica restarts alone (peers kept the service up; dependents don't restart), an earlier slot's crash restarts the whole group. `restart!`/socket restart accept the group name |
 | `supervisor ID do ... end` | — | Nested subtree with its own strategy/intensity/backoff; subtree escalation is an ordinary child exit in the parent |
 
 Per-child options:
@@ -142,8 +173,12 @@ subscriber and a JSON-lines exporter ship by default (`Telemetry::Subscribers`).
 
 ## Shutdown semantics
 
-- `stop_all` drains children in **reverse start order**, waiting for each child to exit
-  (up to its `shutdown:` timeout, then SIGKILL of its process group) before draining the next.
+- `stop_all` drains children in **reverse start order between slots**, waiting for each
+  slot to exit (up to `shutdown:`, then SIGKILL of the process group) before the next;
+  replicas within a slot drain concurrently.
+- Boot: `one_for_one` trees start all children **concurrently** (order carries no
+  dependency there); `rest_for_one`/`one_for_all` boot slot-by-slot in declaration order,
+  replicas within a slot concurrently.
 - Orphan prevention: on Linux, children are armed with `prctl(PR_SET_PDEATHSIG, SIGTERM)`
   between fork and exec, so they receive SIGTERM even if the supervisor is SIGKILLed.
   **macOS/BSD limitation:** no parent-death signal exists there; a SIGKILLed supervisor

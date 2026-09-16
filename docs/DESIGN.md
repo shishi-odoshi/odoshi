@@ -230,3 +230,10 @@ None blocking Phase 1.
   `odoshi`, env `ODOSHI_SOCK`/`ODOSHI_TOKEN`/`ODOSHI_CHILD_ID`/…, telemetry `[:odoshi, …]`,
   socket default `tmp/odoshi.sock`, ecosystem gems `odoshi-resilience` etc.; the `beam`
   repo mirrors the env/telemetry names. Historical log entries above keep the old names.
+- 2026-09-15 — Concurrency round 1 (Tim's call, P1+P2 of the parallelization proposal):
+  replica groups via `count:` (interchangeable peers in one declaration slot; a lost
+  replica restarts alone because the slot's service never went down — dependents keep
+  running under rest_for_one) and parallelism where ordering doesn't bind (§3.1's
+  "declaration order is start order" now binds BETWEEN slots: one_for_one trees boot
+  concurrently, replicas start/drain together; cross-slot shutdown order unchanged).
+  Runtime scaling over the socket (P3) deferred — it needs a §5 cmd addition.

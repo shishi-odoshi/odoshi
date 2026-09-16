@@ -5,15 +5,16 @@ module Odoshi
     RESTART_KINDS = %i[permanent transient temporary].freeze
 
     attr_reader :id, :adapter, :restart, :shutdown, :start_timeout, :health_interval,
-                :degraded_restart_after, :opts
+                :degraded_restart_after, :group, :opts
 
     def initialize(id:, adapter:, restart: :permanent, shutdown: 30, start_timeout: 30,
-                   health_interval: 5, degraded_restart_after: nil, opts: {})
+                   health_interval: 5, degraded_restart_after: nil, group: nil, opts: {})
       raise ConfigError, "child id must be a Symbol" unless id.is_a?(Symbol)
       raise ConfigError, "restart must be one of #{RESTART_KINDS}" unless RESTART_KINDS.include?(restart)
       @id, @adapter, @restart, @shutdown, @start_timeout, @opts =
         id, adapter, restart, shutdown, start_timeout, opts
       @health_interval, @degraded_restart_after = health_interval, degraded_restart_after
+      @group = group # replica group (PLAN 0.4.0 P1): peers are interchangeable
     end
 
     # Should this child be restarted given how it exited? (OTP semantics)

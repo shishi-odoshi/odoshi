@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+require "etc"
+
 module Odoshi
   # Evaluates config/supervisor.rb WITHOUT Rails loaded (DESIGN §9).
   #
@@ -60,11 +62,23 @@ module Odoshi
                                  health_interval: nil, opts: { builder: builder })
     end
 
+    # count: N (P1 replicas) expands into N interchangeable peers with derived
+    # ids (:jobs → :"jobs.1"…:"jobs.N") sharing a replica group. The group
+    # occupies ONE declaration slot: a replica crash restarts only that
+    # replica; an earlier slot's crash restarts the whole group. count: :cpus
+    # uses the machine's processor count. Don't set env ODOSHI_CHILD_ID
+    # manually with count > 1 — each replica needs its own heartbeat id.
     def child(id, adapter:, restart: :permanent, shutdown: 30, start_timeout: 30,
-              health_interval: 5, degraded_restart_after: nil, **opts)
-      @children << ChildSpec.new(id: id, adapter: adapter, restart: restart, shutdown: shutdown,
-                                 start_timeout: start_timeout, health_interval: health_interval,
-                                 degraded_restart_after: degraded_restart_after, opts: opts)
+              health_interval: 5, degraded_restart_after: nil, count: 1, **opts)
+      count = Etc.nprocessors if count == :cpus
+      raise ConfigError, "#{id}: count must be a positive Integer or :cpus" unless count.is_a?(Integer) && count >= 1
+      ids = count == 1 ? [id] : (1..count).map { |n| :"#{id}.#{n}" }
+      group = count == 1 ? nil : id
+      ids.each do |cid|
+        @children << ChildSpec.new(id: cid, adapter: adapter, restart: restart, shutdown: shutdown,
+                                   start_timeout: start_timeout, health_interval: health_interval,
+                                   degraded_restart_after: degraded_restart_after, group: group, opts: opts)
+      end
     end
 
     def build
