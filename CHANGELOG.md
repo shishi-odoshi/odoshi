@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.2 — 2026-09-17
+
+- **A dead child's last heartbeat can no longer vouch for its replacement** (#18). The
+  predecessor's final line could still be sitting in its socket buffer when the successor
+  spawned; processed after the record was cleared, it stamped the new child as
+  active-and-healthy on the corpse's word — masking a replacement that was failing to boot
+  until freshness aging caught up (~3 health intervals). Connections now carry a monotonic
+  id and each child records the high-water mark at spawn, so beats from connections that
+  predate the current occupant are ignored. Every restart is a new process and therefore a
+  new connection, so a live child's own beats always pass. No wire change: §5 is untouched
+  and the fix is entirely supervisor-side.
+
 ## v0.4.1 — 2026-09-17
 
 - **Typo'd lifecycle options now fail loudly.** Adapter options pass through by design, so
