@@ -72,6 +72,7 @@ module Odoshi
               health_interval: 5, degraded_restart_after: nil, count: 1, **opts)
       count = Etc.nprocessors if count == :cpus
       raise ConfigError, "#{id}: count must be a positive Integer or :cpus" unless count.is_a?(Integer) && count >= 1
+      check_for_typos!(id, opts)
       ids = count == 1 ? [id] : (1..count).map { |n| :"#{id}.#{n}" }
       group = count == 1 ? nil : id
       ids.each do |cid|
@@ -79,6 +80,40 @@ module Odoshi
                                    start_timeout: start_timeout, health_interval: health_interval,
                                    degraded_restart_after: degraded_restart_after, group: group, opts: opts)
       end
+    end
+
+    # Lifecycle options are keywords; anything else is adapter-specific and
+    # lands in opts by design (hard rule 2 — new capabilities go in opts, not
+    # the interface). That openness means a typo silently disappears:
+    # `cont: 4` gave you ONE worker instead of four, no error (found by
+    # odoshi-bench). Unknown keys can't be rejected wholesale, but a key one
+    # or two edits away from a lifecycle option is a typo, not an adapter
+    # opt — fail fast (exit 78) with the suggestion.
+    CHILD_OPTIONS = %i[restart shutdown start_timeout health_interval
+                       degraded_restart_after count].freeze
+
+    def check_for_typos!(id, opts)
+      opts.each_key do |key|
+        near = CHILD_OPTIONS.find { |opt| edit_distance(key.to_s, opt.to_s) <= 2 }
+        next unless near
+        raise ConfigError, "#{id}: unknown option #{key.inspect} — did you mean #{near.inspect}? " \
+                           "(adapter options pass through; lifecycle options are spelled exactly)"
+      end
+    end
+
+    # Levenshtein, iterative two-row. Stdlib-only by hard rule 1.
+    def edit_distance(a, b)
+      return b.length if a.empty?
+      return a.length if b.empty?
+      prev = (0..b.length).to_a
+      a.each_char.with_index do |ca, i|
+        row = [i + 1]
+        b.each_char.with_index do |cb, j|
+          row << [prev[j + 1] + 1, row[j] + 1, prev[j] + (ca == cb ? 0 : 1)].min
+        end
+        prev = row
+      end
+      prev[b.length]
     end
 
     def build

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.1 — 2026-09-17
+
+- **Typo'd lifecycle options now fail loudly.** Adapter options pass through by design, so
+  a misspelled lifecycle key used to disappear into them silently — `cont: 4` gave you ONE
+  worker instead of four, with no error (found by odoshi-bench while benchmarking 0.4.0's
+  replicas). A key within two edits of `count`, `shutdown`, `restart`, `start_timeout`,
+  `health_interval`, or `degraded_restart_after` is now a `ConfigError` (exit 78) naming
+  the option you meant. Genuine adapter options (`port:`, `probe:`, `env:`, …) are
+  untouched.
+
 ## v0.4.0 — 2026-09-15 — replicas + parallelism
 
 Concurrency round 1 (P1+P2 of the parallelization plan, Tim-approved):
