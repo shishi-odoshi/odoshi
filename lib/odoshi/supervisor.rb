@@ -16,6 +16,7 @@ module Odoshi
       @stopping = false
       @stop_requested = false
       @heartbeats = {} # id => { at: monotonic ts of last heartbeat, state: reported state }
+      @hb_floor = {}   # id => connection seq at spawn; older connections are the corpse's (#18)
       return unless socket_path
       @socket = SocketServer.new(
         path: socket_path,
@@ -23,9 +24,18 @@ module Odoshi
         # dropped at intake: ghost ids must not grow the table unboundedly
         # (issue #16/#27). Subtree-grandchild routing is the open flat-id
         # question — until it's decided, their beats are dropped, not hoarded.
-        on_heartbeat: lambda { |msg|
+        # A beat counts only if it comes from a connection opened AFTER the
+        # child currently holding that id was spawned. The predecessor's
+        # last line can still be sitting in its socket buffer when the
+        # replacement starts; accepting it would vouch for a successor that
+        # may be failing to boot (#18). Every restart is a new process and
+        # therefore a new connection, so a live child's own beats always
+        # pass. Ghost ids are still dropped at intake (#16).
+        on_heartbeat: lambda { |msg, seq|
           id = msg["id"].to_sym
-          @heartbeats[id] = { at: mono_now, state: msg["state"] } if @children.any? { |c| c.id == id }
+          next unless @children.any? { |c| c.id == id }
+          next if seq <= @hb_floor[id].to_i
+          @heartbeats[id] = { at: mono_now, state: msg["state"] }
         },
         on_control: ->(msg) { @queue << { type: :control, cmd: msg["cmd"], id: msg["id"].to_s.to_sym } }
       )
@@ -109,7 +119,12 @@ module Odoshi
     end
 
     def spawn_and_link(spec)
-      @heartbeats.delete(spec.id) # a replaced child's heartbeats must not vouch for its successor
+      # A replaced child's heartbeats must not vouch for its successor:
+      # clear the record AND raise the connection floor, so beats still
+      # buffered on the corpse's connection are ignored rather than racing
+      # the delete (#18).
+      @heartbeats.delete(spec.id)
+      @hb_floor[spec.id] = @socket&.conn_seq || 0
       adapter = Adapter.lookup(spec.adapter).new
       handle = adapter.spawn(spec)
       prev = @live[spec.id] || {}

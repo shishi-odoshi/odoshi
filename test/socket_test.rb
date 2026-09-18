@@ -165,6 +165,39 @@ class SocketTest < Minitest::Test
     end
   end
 
+  # Issue #18: a beat from the connection the PREDECESSOR used must never
+  # vouch for the child that replaced it — its last line can still be in the
+  # socket buffer when the replacement spawns. Deterministic: rather than
+  # racing a real corpse, hold the old connection open across a restart and
+  # prove beats on it are ignored while a fresh connection still works.
+  def test_beats_from_a_predecessors_connection_are_ignored_after_restart
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "s.sock")
+      with_sup(dir, cmd: "sleep 30") do |sup, events|
+        old_conn = UNIXSocket.new(path)
+        old_conn.puts(beat(sup, "healthy"))
+        assert wait_until(10) { heartbeat_active?(sup) }, "the live child's own connection is accepted"
+
+        sup.restart!(:hb) # new generation ⇒ the floor rises
+        assert wait_until(10) { spawns(events, :hb) >= 2 }, "child should be replaced"
+        refute heartbeat_active?(sup), "restart clears the record"
+
+        # The predecessor's connection: still open, still authenticated,
+        # still naming a real child — and now stale by construction.
+        3.times { old_conn.puts(beat(sup, "healthy")) }
+        sleep 0.5
+        refute heartbeat_active?(sup),
+               "a beat from the predecessor's connection must not vouch for its successor"
+
+        new_conn = UNIXSocket.new(path)
+        new_conn.puts(beat(sup, "healthy"))
+        assert wait_until(10) { heartbeat_active?(sup) },
+               "the successor's own connection must still be accepted"
+        [old_conn, new_conn].each(&:close)
+      end
+    end
+  end
+
   # Issue #31: an unusable socket path is a config problem (exit 78), not a
   # raw ArgumentError stacktrace.
   def test_unusable_socket_path_raises_config_error
@@ -197,6 +230,10 @@ class SocketTest < Minitest::Test
 
   def degraded(events)
     events.select { |e| e[:event].last == :degraded && e[:metadata][:id] == :hb }
+  end
+
+  def beat(sup, state)
+    { id: "hb", state: state, ts: 0, token: sup.heartbeat_token, meta: {} }.to_json
   end
 
   def free_port

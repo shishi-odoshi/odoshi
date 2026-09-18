@@ -237,3 +237,9 @@ None blocking Phase 1.
   "declaration order is start order" now binds BETWEEN slots: one_for_one trees boot
   concurrently, replicas start/drain together; cross-slot shutdown order unchanged).
   Runtime scaling over the socket (P3) deferred — it needs a §5 cmd addition.
+- 2026-09-17 — #18 resolved in code rather than by documenting the window (Tim's call):
+  heartbeat intake now ignores beats arriving on connections older than the child
+  currently holding that id (per-connection monotonic seq, recorded as a floor at spawn).
+  Considered and rejected: a wire-level generation/nonce, which would have meant editing
+  the frozen §5 message shape — unnecessary, since connection identity is already known
+  server-side.

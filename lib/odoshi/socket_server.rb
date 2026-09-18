@@ -19,10 +19,20 @@ module Odoshi
 
     attr_reader :path, :token
 
+    # Highest connection id issued so far: connections at or below a child's
+    # recorded floor predate it (issue #18).
+    def conn_seq = @seq_mutex.synchronize { @conn_seq }
+
     def initialize(path:, on_heartbeat:, on_control:)
       @path, @on_heartbeat, @on_control = path, on_heartbeat, on_control
       @token = SecureRandom.hex(16)
       @conns = []
+      # Monotonic per-connection id. A restarted child is a NEW process and
+      # must open a NEW connection, so the supervisor can tell a successor's
+      # beats from its dead predecessor's buffered ones (issue #18) without
+      # touching the frozen §5 wire format.
+      @conn_seq = 0
+      @seq_mutex = Mutex.new
     end
 
     # Binds, chmods, and exports ODOSHI_SOCK / ODOSHI_TOKEN so children
@@ -48,7 +58,8 @@ module Odoshi
             close_quietly(conn)
             next
           end
-          @conns << { conn: conn, thread: Thread.new { serve(conn) } }
+          seq = @seq_mutex.synchronize { @conn_seq += 1 }
+          @conns << { conn: conn, seq: seq, thread: Thread.new { serve(conn, seq) } }
         rescue IOError, SystemCallError
           break # server closed during shutdown
         end
@@ -70,7 +81,7 @@ module Odoshi
 
     private
 
-    def serve(conn)
+    def serve(conn, seq)
       loop do
         line = conn.gets("\n", MAX_LINE)
         break if line.nil?
@@ -81,7 +92,7 @@ module Odoshi
           break if line.nil?
           next
         end
-        handle_line(line)
+        handle_line(line, seq)
       end
     rescue IOError, SystemCallError
       nil
@@ -92,7 +103,7 @@ module Odoshi
     # §5: token, cmd, id, and state are JSON strings; anything else in those
     # fields is malformed and silently dropped — same as a bad token. A bad
     # line must never take the connection (or the supervisor) down.
-    def handle_line(line)
+    def handle_line(line, seq)
       msg = begin
         JSON.parse(line)
       rescue StandardError
@@ -102,7 +113,7 @@ module Odoshi
       if msg.key?("cmd")
         @on_control.call(msg) if msg["cmd"].is_a?(String)
       elsif msg["id"].is_a?(String) && msg["state"].is_a?(String)
-        @on_heartbeat.call(msg)
+        @on_heartbeat.call(msg, seq)
       end
     end
 
