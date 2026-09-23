@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **All tree mutation now runs on the control loop** (#60). `restart!` previously ran
+  `stop_child`/`start_child` on the *caller's* thread, so `@live`, `@heartbeats` and
+  `@hb_floor` had two writers and `Process.fork` could run off the loop thread — benign
+  only because the loop was usually blocked elsewhere. It is now fire-and-forget: the
+  request is queued and applied on the loop, giving a single writer and keeping forks on
+  one thread. Over IPC this was always async; in-process callers observe the effect
+  (telemetry, `live_pid`, the state file) rather than a return value.
+- **Shutdown preempts queued restarts** (#60). A restart storm used to keep the loop
+  draining and respawning while a TERM waited behind it — long enough for the platform to
+  SIGKILL mid-restart. `apply_restart` now honors the stop flag, extending the #28 rule to
+  queued remediation.
+- A restart for an unknown id is ignored instead of raising `ArgumentError` inside the
+  control loop.
+
 ## v0.4.2 — 2026-09-17
 
 - **A dead child's last heartbeat can no longer vouch for its replacement** (#18). The
