@@ -69,6 +69,7 @@ module Odoshi
         case msg[:type]
         when :exit then handle_exit(msg[:id], msg[:generation], msg[:status])
         when :health_dead then handle_health_dead(msg[:id], msg[:generation])
+        when :restart then apply_restart(msg[:id])
         when :control then handle_control(msg)
         when :stop then break
         end
@@ -88,19 +89,20 @@ module Odoshi
       @queue << { type: :stop }
     end
 
-    # Public remediation API (DESIGN §7). Over IPC in the real thing; direct
-    # call here. Accepts a child id or a replica group name (P1) — a group
-    # drains all members together, then restarts them together.
+    # Public remediation API (DESIGN §7). Accepts a child id or a replica
+    # group name; a group drains and restarts together.
+    #
+    # FIRE-AND-FORGET: the request is queued and applied on the control loop,
+    # never on the caller's thread. That gives @live / @heartbeats /
+    # @hb_floor exactly one writer, and keeps Process.fork on a single thread
+    # (the fork-safety rule from the 2026-09-15 decision log) — previously a
+    # direct caller mutated the tree concurrently with the loop, which was
+    # benign only because the loop was usually blocked elsewhere. Over IPC
+    # this was always async; in-process callers observe the effect (telemetry,
+    # live_pid, the state file) rather than the return value.
     def restart!(id)
-      members = @children.select { |c| c.group == id }
-      if members.any?
-        stop_batch(members)
-        start_batch(members)
-      else
-        spec = spec_for(id)
-        stop_child(spec)
-        start_child(spec)
-      end
+      @queue << { type: :restart, id: id }
+      true
     end
 
     def ids = @children.map(&:id)
@@ -262,7 +264,31 @@ module Odoshi
     def handle_control(msg)
       return unless msg[:cmd] == "restart"
       return unless @children.any? { |c| c.id == msg[:id] || c.group == msg[:id] }
-      restart!(msg[:id])
+      # Already on the loop thread — apply directly rather than round-tripping
+      # through the queue.
+      apply_restart(msg[:id])
+    end
+
+    # Runs ONLY on the control loop. Respawning here, before the drained
+    # child's exit is popped, is what keeps a deliberate restart from counting
+    # toward restart intensity: handle_exit's generation guard drops the stale
+    # exit (DESIGN §7 — restarting is a feature, not a failure).
+    def apply_restart(id)
+      # Shutdown preempts queued remediation (#28's rule, which predates
+      # restart! being queued at all): without this, a restart storm keeps the
+      # loop busy draining and respawning while a TERM waits behind it, and
+      # the platform SIGKILLs us mid-restart.
+      return if @stop_requested
+      members = @children.select { |c| c.group == id }
+      if members.any?
+        stop_batch(members)
+        start_batch(members)
+      else
+        return unless @children.any? { |c| c.id == id }
+        spec = spec_for(id)
+        stop_child(spec)
+        start_child(spec)
+      end
     end
 
     # A monitor thread declared this child unhealthy enough to replace. Drain
